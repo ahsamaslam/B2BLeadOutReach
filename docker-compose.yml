@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: b2b-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: b2b_leads
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: b2b-redis
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: b2b-backend
+    depends_on:
+      - db
+      - redis
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/b2b_leads
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL:-sonar}
+      SMTP_HOST: smtp.hostinger.com
+      SMTP_PORT: 587
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Union Logix}
+      ALLOWED_ORIGINS: http://localhost:3000
+      MY_COMPANY_NAME: ${MY_COMPANY_NAME:-Union Logix}
+      MY_COMPANY_SERVICES: ${MY_COMPANY_SERVICES:-AI and Automation}
+      MY_COMPANY_VALUE_PROP: ${MY_COMPANY_VALUE_PROP:-We help reduce costs with AI automation}
+      MY_COMPANY_WEBSITE: ${MY_COMPANY_WEBSITE:-https://unionlogix.com}
+      MY_COMPANY_CONTACT: ${MY_COMPANY_CONTACT:-sales@unionlogix.com}
+    volumes:
+      - portfolio_uploads:/app/uploads
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: b2b-frontend
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  portfolio_uploads:
