@@ -24,6 +24,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: b2b-backend
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       - db
       - redis
@@ -31,21 +34,27 @@ services:
       DATABASE_URL: postgresql://postgres:password@db:5432/b2b_leads
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
-      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL:-sonar}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HUNTER_API_KEY: ${HUNTER_API_KEY:-}
+      CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY:-}
+      GOOGLE_CSE_API_KEY: ${GOOGLE_CSE_API_KEY:-}
+      GOOGLE_CSE_CX: ${GOOGLE_CSE_CX:-}
       SMTP_HOST: smtp.hostinger.com
       SMTP_PORT: 587
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Union Logix}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
       ALLOWED_ORIGINS: http://localhost:3000
       MY_COMPANY_NAME: ${MY_COMPANY_NAME:-Union Logix}
       MY_COMPANY_SERVICES: ${MY_COMPANY_SERVICES:-AI and Automation}
       MY_COMPANY_VALUE_PROP: ${MY_COMPANY_VALUE_PROP:-We help reduce costs with AI automation}
       MY_COMPANY_WEBSITE: ${MY_COMPANY_WEBSITE:-https://unionlogix.com}
       MY_COMPANY_CONTACT: ${MY_COMPANY_CONTACT:-sales@unionlogix.com}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI:-http://localhost:8000/api/linkedin/callback}
     volumes:
       - portfolio_uploads:/app/uploads
     ports:

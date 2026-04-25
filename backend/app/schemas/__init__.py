@@ -9,7 +9,9 @@ class CompanyBase(BaseModel):
     website: HttpUrl
 
 class CompanyCreate(CompanyBase):
-    pass
+    niche: Optional[str] = None
+    location: Optional[str] = None
+    business_type: Optional[str] = "independent"  # "independent" | "franchise"
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
@@ -20,6 +22,10 @@ class CompanyUpdate(BaseModel):
     news: Optional[str] = None
     phone: Optional[str] = None
     landline: Optional[str] = None
+    address: Optional[str] = None
+    niche: Optional[str] = None
+    location: Optional[str] = None
+    business_type: Optional[str] = None
 
 class ContactResponse(BaseModel):
     id: int
@@ -49,6 +55,10 @@ class CompanyResponse(CompanyBase):
     news: Optional[str]
     phone: Optional[str]
     landline: Optional[str]
+    address: Optional[str]
+    niche: Optional[str]
+    location: Optional[str]
+    business_type: Optional[str]
     created_at: datetime
     updated_at: datetime
     contacts: List[ContactResponse] = []
@@ -172,6 +182,8 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     is_active: bool
+    is_admin: bool = False
+    tenant_id: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -181,3 +193,60 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+# ============= Campaign Template Schemas =============
+
+class CampaignTemplateBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    subject_template: str = Field(..., min_length=1, max_length=500)
+    body_template: str = Field(..., min_length=1)
+    attach_portfolio: bool = False
+
+class CampaignTemplateCreate(CampaignTemplateBase):
+    pass
+
+class CampaignTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
+    attach_portfolio: Optional[bool] = None
+
+class CampaignTemplateResponse(CampaignTemplateBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============= Niche Discovery Schemas =============
+
+class DiscoverySearchRequest(BaseModel):
+    niche: str = Field(..., min_length=1, max_length=255,
+                       description="Business niche, e.g. 'dental clinics', 'law firms'")
+    location: str = Field(..., min_length=1, max_length=255,
+                          description="Target location, e.g. 'Manchester, UK'")
+    business_type: str = Field(
+        default="",
+        max_length=500,
+        description="Additional criteria, e.g. 'has legacy patient portal software'"
+    )
+    max_results: int = Field(default=10, ge=1, le=50)
+    auto_scrape: bool = Field(
+        default=True,
+        description="Immediately queue a scraping task for discovered companies"
+    )
+
+class DiscoveredCompany(BaseModel):
+    name: str
+    website: str
+    address: Optional[str] = None
+    reason: Optional[str] = None   # why Perplexity thinks they match
+
+class DiscoverySearchResponse(BaseModel):
+    discovered: List[DiscoveredCompany]
+    companies_seeded: int
+    companies_skipped: int
+    task_id: Optional[str] = None   # scraping task, if auto_scrape=True

@@ -25,12 +25,20 @@ async def _run_scraping(task_id: str, company_ids: list[int]):
                 company.status = "scraping"
                 db.commit()
 
-                data = await OpenAIService.extract_company_data(company.name, company.website)
+                data = await OpenAIService.extract_company_data(
+                    company.name,
+                    company.website,
+                    business_type=company.business_type or "independent",
+                    location=company.location or "",
+                )
                 company.company_info = data.get("company_info", "")
                 company.projects = data.get("projects", "")
                 company.news = data.get("news", "")
                 company.phone = data.get("phone", "")
                 company.landline = data.get("landline", "")
+                # Only overwrite address if not already set by discovery
+                if not company.address and data.get("address"):
+                    company.address = data.get("address", "")
 
                 metadata = db.query(ScrapeMetadata).filter(ScrapeMetadata.company_id == company.id).first()
                 if not metadata:

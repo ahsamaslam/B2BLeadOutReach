@@ -7,18 +7,19 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/b2b_leads"
     
-    # OpenAI
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4-turbo-preview"
-    OPENAI_TEMPERATURE: float = 0.7
-    OPENAI_MAX_TOKENS: int = 2000
+    # Anthropic
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-opus-4-5"
+    ANTHROPIC_TEMPERATURE: float = 0.7
+    ANTHROPIC_MAX_TOKENS: int = 2000
 
-    # Perplexity (optional fallback web research)
-    PERPLEXITY_API_KEY: str = ""
-    PERPLEXITY_MODEL: str = "sonar"
-    
-    # Hunter.io (optional)
+    # Hunter.io (optional — email finding)
     HUNTER_API_KEY: Optional[str] = None
+
+    # Google Custom Search (optional — free 100 queries/day, most reliable web source)
+    # Setup: https://developers.google.com/custom-search/v1/introduction
+    GOOGLE_CSE_API_KEY: Optional[str] = None
+    GOOGLE_CSE_CX: Optional[str] = None
     
     # Email Configuration — Hostinger SMTP
     SMTP_HOST: str = "smtp.hostinger.com"
@@ -30,6 +31,9 @@ class Settings(BaseSettings):
     
     # SendGrid (alternative to SMTP)
     SENDGRID_API_KEY: Optional[str] = None
+
+    # Resend (HTTP-based, works from Docker)
+    RESEND_API_KEY: Optional[str] = None
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -50,6 +54,11 @@ class Settings(BaseSettings):
     MY_COMPANY_WEBSITE: str = "https://example.com"
     MY_COMPANY_CONTACT: str = "contact@example.com"
     
+    # LinkedIn OAuth2 (optional)
+    LINKEDIN_CLIENT_ID: Optional[str] = None
+    LINKEDIN_CLIENT_SECRET: Optional[str] = None
+    LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/linkedin/callback"
+
     # Rate Limiting
     MAX_SCRAPING_BATCH_SIZE: int = 10
     EMAIL_SEND_DELAY_SECONDS: int = 5

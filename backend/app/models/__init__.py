@@ -1,7 +1,39 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+
+
+# ─── Tenant / Multi-tenancy ───────────────────────────────────────────────────
+
+class Tenant(Base):
+    """A tenant represents a customer organisation using the platform."""
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    plan = Column(String(50), default="free", index=True)
+    # plan values: free | starter | professional | enterprise
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    users = relationship("User", back_populates="tenant")
+    settings = relationship("TenantSettings", back_populates="tenant", cascade="all, delete-orphan")
+
+
+class TenantSettings(Base):
+    """Per-tenant key-value configuration (overrides global env vars)."""
+    __tablename__ = "tenant_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    key = Column(String(255), nullable=False)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="settings")
+
+    __table_args__ = (UniqueConstraint("tenant_id", "key", name="uq_tenant_settings_key"),)
 
 class Company(Base):
     """Company model - stores target companies for outreach"""
@@ -12,7 +44,17 @@ class Company(Base):
     website = Column(String(500), nullable=False)
     status = Column(String(50), default="created", index=True)
     # Status values: created, scraping, data_parsed, drafted, approved, sent, error
-    
+
+    # LinkedIn outreach
+    linkedin_outreach_status = Column(String(50), nullable=True)  # pending, sent, replied
+    linkedin_sent_at = Column(DateTime, nullable=True)
+
+    # Discovery / niche context
+    niche = Column(String(255), nullable=True, index=True)
+    location = Column(String(255), nullable=True)
+    address = Column(String(500), nullable=True)
+    business_type = Column(String(500), nullable=True)
+
     # Scraped data
     company_info = Column(Text, nullable=True)
     projects = Column(Text, nullable=True)
@@ -105,8 +147,9 @@ class EmailLog(Base):
     
     sent_at = Column(DateTime, nullable=True, index=True)
     error_message = Column(Text, nullable=True)
-    
-    # Email tracking (optional)
+
+    # Email open tracking
+    tracking_token = Column(String(36), unique=True, index=True, nullable=True)
     opened_at = Column(DateTime, nullable=True)
     clicked_at = Column(DateTime, nullable=True)
     replied_at = Column(DateTime, nullable=True)
@@ -116,6 +159,37 @@ class EmailLog(Base):
     # Relationships
     template = relationship("EmailTemplate", back_populates="email_logs")
     company = relationship("Company", back_populates="email_logs")
+
+
+class LinkedInToken(Base):
+    """Stores per-user LinkedIn OAuth2 access tokens."""
+    __tablename__ = "linkedin_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    access_token = Column(Text, nullable=False)
+    linkedin_member_id = Column(String(100), nullable=True)   # LinkedIn URN id
+    linkedin_name = Column(String(255), nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="linkedin_token")
+
+
+class CampaignTemplate(Base):
+    """Reusable campaign email template — not tied to a single company."""
+    __tablename__ = "campaign_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    subject_template = Column(String(500), nullable=False)
+    body_template = Column(Text, nullable=False)
+    # Supported placeholders: {{company_name}}, {{owner_name}}, {{address}}, {{niche}}, {{location}}
+    attach_portfolio = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ScrapingTask(Base):
@@ -149,4 +223,9 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)  # platform-wide admin
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    tenant = relationship("Tenant", back_populates="users")
+    linkedin_token = relationship("LinkedInToken", back_populates="user", uselist=False, cascade="all, delete-orphan")

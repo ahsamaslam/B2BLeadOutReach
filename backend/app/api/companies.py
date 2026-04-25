@@ -1,16 +1,40 @@
 from io import BytesIO
+from typing import List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_current_user_from_token
 from app.database import get_db
-from app.models import Company, User
+from app.models import Company, Contact, User
 from app.schemas import CompanyCreate, CompanyResponse, CompanyUpdate, BulkUploadResponse
 
 router = APIRouter()
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
+
+
+class ManualLeadCreate(BaseModel):
+    """Create a lead manually with full contact info — no scraping needed."""
+    name: str
+    website: Optional[str] = ""
+    niche: Optional[str] = None
+    location: Optional[str] = None
+    address: Optional[str] = None
+    business_type: Optional[str] = None
+    phone: Optional[str] = None
+    # Primary contact
+    ceo_name: Optional[str] = None
+    ceo_email: Optional[str] = None
+    ceo_phone: Optional[str] = None
+    # Email draft (optional — pre-fills template so lead is immediately ready to send)
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
 
 
 @router.get("/template")
@@ -29,8 +53,11 @@ def download_template():
         ],
         "Industry": ["Manufacturing", "Energy", "Software"],
         "Location": ["New York, USA", "Springfield, USA", "Austin, USA"],
+        "Niche": ["Industrial equipment", "Energy supply", "HR software"],
+        "Address": ["123 Main St, New York, NY 10001", "", "456 Tech Ave, Austin, TX 78701"],
+        "Business_Type": ["independent", "franchise", "independent"],
         "Employees": ["500-1000", "1000-5000", "50-200"],
-        "Notes": ["Optional notes", "", ""],
+        "Notes": ["'independent' or 'franchise'", "", ""],
     }
     df = pd.DataFrame(sample_data)
     buf = BytesIO()
@@ -81,7 +108,20 @@ async def upload_companies(
                 skipped += 1
                 continue
 
-            db.add(Company(name=name, website=website, status="created"))
+            # Optional enrichment columns from the spreadsheet
+            def _col(col_name: str) -> str | None:
+                val = str(row.get(col_name, "")).strip()
+                return val if val and val != "nan" else None
+
+            db.add(Company(
+                name=name,
+                website=website,
+                niche=_col("Niche"),
+                location=_col("Location"),
+                address=_col("Address"),
+                business_type=_col("Business_Type"),
+                status="created",
+            ))
             added += 1
         except Exception as exc:
             errors.append(str(exc))
@@ -101,8 +141,61 @@ def create_company(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    company = Company(name=payload.name, website=str(payload.website), status="created")
+    company = Company(
+        name=payload.name,
+        website=str(payload.website),
+        niche=payload.niche,
+        location=payload.location,
+        business_type=payload.business_type or "independent",
+        status="created",
+    )
     db.add(company)
+    db.commit()
+    db.refresh(company)
+    return company
+
+
+@router.post("/manual", response_model=CompanyResponse)
+def create_manual_lead(
+    payload: ManualLeadCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Create a lead manually with contact info. Skips scraping entirely."""
+    from app.models import EmailTemplate
+    company = Company(
+        name=payload.name,
+        website=payload.website or "",
+        niche=payload.niche,
+        location=payload.location,
+        address=payload.address,
+        business_type=payload.business_type,
+        phone=payload.phone,
+        status="data_parsed",
+    )
+    db.add(company)
+    db.flush()  # get company.id before commit
+
+    if payload.ceo_name or payload.ceo_email:
+        contact = Contact(
+            company_id=company.id,
+            role="CEO",
+            name=payload.ceo_name,
+            email=payload.ceo_email,
+            phone=payload.ceo_phone,
+        )
+        db.add(contact)
+
+    if payload.email_subject and payload.email_body:
+        template = EmailTemplate(
+            company_id=company.id,
+            subject=payload.email_subject,
+            body=payload.email_body,
+            status="drafted",
+        )
+        db.add(template)
+        company.status = "drafted"
+
     db.commit()
     db.refresh(company)
     return company
@@ -120,6 +213,88 @@ def get_companies(
     if status:
         query = query.filter(Company.status == status)
     return query.order_by(Company.created_at.desc()).offset(offset).limit(limit).all()
+
+
+# ── /export MUST come before /{company_id} so FastAPI doesn't try to cast "export" as int ──
+
+@router.get("/export")
+def export_leads(
+    format: str = "csv",
+    niche: str | None = None,
+    location: str | None = None,
+    status: str | None = None,
+    _token: str | None = Query(default=None),  # fallback for browser direct-download links
+    authorization: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Export all leads (or a filtered subset) as CSV or XLSX."""
+    # Resolve user — prefer Authorization header, fall back to ?_token= query param
+    user = None
+    if authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+        user = get_current_user_from_token(db, token)
+    elif _token:
+        user = get_current_user_from_token(db, _token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    query = db.query(Company)
+    if niche:
+        query = query.filter(Company.niche == niche)
+    if location:
+        query = query.filter(Company.location == location)
+    if status:
+        query = query.filter(Company.status == status)
+    companies = query.order_by(Company.created_at.desc()).all()
+
+    rows = []
+    for c in companies:
+        contacts_by_role: dict[str, Contact] = {}
+        for ct in c.contacts:
+            contacts_by_role[ct.role.upper()] = ct
+
+        ceo = contacts_by_role.get("CEO")
+        cto = contacts_by_role.get("CTO")
+        cfo = contacts_by_role.get("CFO")
+
+        rows.append({
+            "Company_Name": c.name,
+            "Website": c.website,
+            "Niche": c.niche or "",
+            "Location": c.location or "",
+            "Address": c.address or "",
+            "Business_Type": c.business_type or "",
+            "Phone": c.phone or "",
+            "Landline": c.landline or "",
+            "CEO_Name": ceo.name if ceo else "",
+            "CEO_Email": ceo.email if ceo else "",
+            "CTO_Name": cto.name if cto else "",
+            "CTO_Email": cto.email if cto else "",
+            "CFO_Name": cfo.name if cfo else "",
+            "CFO_Email": cfo.email if cfo else "",
+            "Status": c.status,
+            "Created_At": c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "",
+        })
+
+    df = pd.DataFrame(rows)
+    buf = BytesIO()
+
+    if format.lower() == "xlsx":
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Leads")
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="leads_export.xlsx"'},
+        )
+    else:
+        df.to_csv(buf, index=False)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="leads_export.csv"'},
+        )
 
 
 @router.get("/{company_id}", response_model=CompanyResponse)
@@ -154,6 +329,23 @@ def update_company(
     db.commit()
     db.refresh(company)
     return company
+
+
+@router.delete("/bulk")
+def bulk_delete_companies(
+    payload: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="No ids provided")
+    deleted = (
+        db.query(Company)
+        .filter(Company.id.in_(payload.ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.delete("/{company_id}")
