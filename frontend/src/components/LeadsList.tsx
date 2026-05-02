@@ -32,9 +32,11 @@ import {
   Add,
   Business,
   Delete,
+  Description,
   Download,
   Email,
   FilterList,
+  UploadFile,
   Store,
 } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -81,6 +83,7 @@ interface LeadsListProps {
 const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<number[]>([]);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterNiche, setFilterNiche] = useState<string>("");
   const [filterLocation, setFilterLocation] = useState<string>("");
@@ -158,6 +161,24 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
     onError: () => toast.error("Failed to delete lead"),
   });
 
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadExcel(file),
+    onSuccess: (data) => {
+      const added = data?.companies_added ?? 0;
+      const skipped = data?.companies_skipped ?? 0;
+      toast.success(`Upload completed: ${added} added, ${skipped} skipped`);
+      if (Array.isArray(data?.errors) && data.errors.length > 0) {
+        toast.error(`Some rows had errors: ${data.errors.length}`);
+      }
+      setUploadFile(null);
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+    onError: (error: any) => {
+      const detail = error?.response?.data?.detail || "Upload failed";
+      toast.error(detail);
+    },
+  });
+
   const filtered = companies.filter((c) => {
     if (filterStatus && c.status !== filterStatus) return false;
     if (filterNiche && c.niche !== filterNiche) return false;
@@ -228,6 +249,23 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await api.downloadLeadsTemplateBlob();
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "companies_template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download format template");
+    }
+  };
+
   const getPrimaryContact = (contacts: Contact[]) => {
     return (
       contacts.find((c) => c.role === "CEO") ||
@@ -249,7 +287,7 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
         mb={2}
       >
         <Typography variant="h5" fontWeight="bold">
-          Leads ({filtered.length})
+          Upload Leads ({filtered.length})
         </Typography>
         <Box display="flex" gap={1} flexWrap="wrap">
           {/* Add Manual Lead */}
@@ -288,14 +326,69 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
               size="small"
               onClick={() => onSendToSelected(selected)}
             >
-              Email {selected.length} selected
+              Broadcast to {selected.length} selected
             </Button>
           )}
         </Box>
       </Box>
 
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+          Step 1: Upload Leads File
+        </Typography>
+        <Typography variant="body2" color="text.secondary" mb={1.5}>
+          Upload a CSV/XLSX file. Required columns are <strong>Company_Name</strong> and <strong>Website</strong>.
+          Optional columns: Niche, Location, Address, Business_Type.
+        </Typography>
+        <Box display="flex" gap={1} flexWrap="wrap" mb={1.5}>
+          <Chip size="small" icon={<Description />} label="Company_Name (required)" />
+          <Chip size="small" icon={<Description />} label="Website (required)" />
+          <Chip size="small" icon={<Description />} label="Niche (optional)" variant="outlined" />
+          <Chip size="small" icon={<Description />} label="Location (optional)" variant="outlined" />
+          <Chip size="small" icon={<Description />} label="Address (optional)" variant="outlined" />
+          <Chip size="small" icon={<Description />} label="Business_Type (optional)" variant="outlined" />
+        </Box>
+        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+          <Button
+            variant="outlined"
+            startIcon={<Download />}
+            onClick={handleDownloadTemplate}
+          >
+            Download Format Template
+          </Button>
+
+          <Button
+            variant="outlined"
+            component="label"
+            startIcon={<UploadFile />}
+          >
+            {uploadFile ? uploadFile.name : "Choose File"}
+            <input
+              hidden
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setUploadFile(file);
+              }}
+            />
+          </Button>
+
+          <Button
+            variant="contained"
+            disabled={!uploadFile || uploadMutation.isPending}
+            onClick={() => uploadFile && uploadMutation.mutate(uploadFile)}
+          >
+            {uploadMutation.isPending ? "Uploading..." : "Upload & Parse Leads"}
+          </Button>
+        </Box>
+      </Paper>
+
       {/* Filters */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+          Step 2: Review and Filter Uploaded Leads
+        </Typography>
         <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
           <FilterList color="action" />
           <TextField

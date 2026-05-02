@@ -63,7 +63,7 @@ interface SendResult {
   errors: string[];
 }
 
-const STEPS = ["Select Leads", "Choose Template", "Review & Send"];
+const STEPS = ["Select Uploaded Leads", "Choose Template", "Broadcast"];
 
 interface EmailCampaignProps {
   initialSelectedIds?: number[];
@@ -143,10 +143,10 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
   return (
     <Container maxWidth="lg" sx={{ mt: 3, mb: 4 }}>
       <Typography variant="h5" fontWeight="bold" gutterBottom>
-        Email Campaign
+        Broadcast Emails
       </Typography>
       <Typography variant="body2" color="text.secondary" mb={3}>
-        Select leads, choose a template, then send AI-personalised outreach
+        Select uploaded leads, choose a template, then broadcast AI-personalised
         emails.
       </Typography>
 
@@ -245,7 +245,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
               disabled={!canProceedStep0}
               onClick={() => setActiveStep(1)}
             >
-              Next: Choose Template
+              Next: Template
             </Button>
           </Box>
         </Box>
@@ -332,13 +332,13 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
               disabled={!canProceedStep1}
               onClick={() => setActiveStep(2)}
             >
-              Next: Review
+              Next: Broadcast Review
             </Button>
           </Box>
         </Box>
       )}
 
-      {/* Step 2 — Review & Send */}
+      {/* Step 2 — Broadcast */}
       {activeStep === 2 && selectedTemplate && (
         <Box>
           <Grid container spacing={3}>

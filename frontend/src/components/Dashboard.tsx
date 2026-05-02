@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   Container,
   Dialog,
   DialogActions,
@@ -12,10 +11,9 @@ import {
   DialogTitle,
   Grid,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
-import { CheckCircle, LinkedIn } from "@mui/icons-material";
+import { CheckCircle } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
@@ -61,12 +59,6 @@ const Dashboard: React.FC = () => {
     queryFn: api.getAnalytics,
   });
 
-  // LinkedIn connection status
-  const { data: linkedInStatus } = useQuery({
-    queryKey: ["linkedInStatus"],
-    queryFn: api.getLinkedInStatus,
-  });
-
   const handleApproveEmail = async () => {
     if (!selectedCompany) return;
     await api.updateEmailTemplate(selectedCompany.id, editedEmail);
@@ -88,44 +80,6 @@ const Dashboard: React.FC = () => {
         <Typography variant="h4" component="h1" fontWeight="bold">
           B2B Lead Generation Dashboard
         </Typography>
-        <Box display="flex" gap={1} alignItems="center">
-          {linkedInStatus?.configured ? (
-            linkedInStatus?.connected ? (
-              <Chip
-                icon={<LinkedIn />}
-                label={`LinkedIn: ${linkedInStatus.linkedin_name || "Connected"}`}
-                color="primary"
-                variant="outlined"
-                onDelete={async () => {
-                  await api.disconnectLinkedIn();
-                  queryClient.invalidateQueries({
-                    queryKey: ["linkedInStatus"],
-                  });
-                  toast.success("LinkedIn disconnected");
-                }}
-              />
-            ) : (
-              <Button
-                variant="outlined"
-                startIcon={<LinkedIn />}
-                onClick={async () => {
-                  const { auth_url } = await api.getLinkedInConnectUrl();
-                  window.location.href = auth_url;
-                }}
-              >
-                Connect LinkedIn
-              </Button>
-            )
-          ) : (
-            <Tooltip title="Add LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET to .env to enable">
-              <span>
-                <Button variant="outlined" startIcon={<LinkedIn />} disabled>
-                  LinkedIn (not configured)
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </Box>
       </Box>
 
       {/* Analytics Stats */}

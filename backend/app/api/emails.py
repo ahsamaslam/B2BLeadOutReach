@@ -18,8 +18,6 @@ from app.schemas import (
     CampaignTemplateResponse,
 )
 from app.services import email_service
-from app.services.openai_service import OpenAIService
-
 
 class SendEmailRequest(BaseModel):
     attach_portfolio: bool = False
@@ -290,8 +288,9 @@ async def send_bulk_emails(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Send AI-personalised emails to a list of companies using a campaign template.
-    For each company the template is personalised by OpenAI using scraped data.
+    Send emails to a list of companies using a campaign template.
+    Template variables like {{company_name}}, {{owner_name}}, {{address}},
+    {{niche}}, {{location}} are substituted with company data.
     """
     tmpl = db.query(CampaignTemplate).filter(CampaignTemplate.id == payload.campaign_template_id).first()
     if not tmpl:
@@ -324,30 +323,26 @@ async def send_bulk_emails(
 
         owner_name = primary.name if primary else ""
 
-        try:
-            personalised = await OpenAIService.personalise_from_campaign_template(
-                subject_template=tmpl.subject_template,
-                body_template=tmpl.body_template,
-                company_name=company.name,
-                owner_name=owner_name,
-                address=company.address or "",
-                niche=company.niche or "",
-                location=company.location or "",
-                company_info=company.company_info or "",
-                projects=company.projects or "",
-                news=company.news or "",
+        def _substitute(text: str) -> str:
+            return (
+                text
+                .replace("{{company_name}}", company.name or "")
+                .replace("{{owner_name}}", owner_name or "")
+                .replace("{{address}}", company.address or "")
+                .replace("{{niche}}", company.niche or "")
+                .replace("{{location}}", company.location or "")
+                .replace("{{website}}", company.website or "")
             )
-        except Exception as exc:
-            failed += 1
-            errors.append(f"{company.name}: personalisation failed — {exc}")
-            continue
+
+        subject = _substitute(tmpl.subject_template)
+        body = _substitute(tmpl.body_template)
 
         tracking_token = str(uuid.uuid4())
         result = email_service.send_email(
             to_email=recipient_email,
             to_name=owner_name or None,
-            subject=personalised["subject"],
-            body_html=personalised["body"],
+            subject=subject,
+            body_html=body,
             attach_portfolio=payload.attach_portfolio or tmpl.attach_portfolio,
             user_id=current_user.id,
             tracking_token=tracking_token,
@@ -359,7 +354,7 @@ async def send_bulk_emails(
             company_id=company.id,
             recipient_email=recipient_email,
             recipient_name=owner_name or None,
-            subject=personalised["subject"],
+            subject=subject,
             status=status,
             sent_at=datetime.utcnow() if result["success"] else None,
             error_message=result.get("error") if not result["success"] else None,

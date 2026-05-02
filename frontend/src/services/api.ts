@@ -98,6 +98,13 @@ export const api = {
     return response.data;
   },
 
+  downloadLeadsTemplateBlob: async () => {
+    const response = await axiosInstance.get("/api/companies/template", {
+      responseType: "blob",
+    });
+    return response;
+  },
+
   updateCompany: async (id: number, data: any) => {
     const response = await axiosInstance.put(`/api/companies/${id}`, data);
     return response.data;
@@ -112,26 +119,6 @@ export const api = {
     const response = await axiosInstance.delete("/api/companies/bulk", {
       data: { ids },
     });
-    return response.data;
-  },
-
-  // Scraping
-  startScraping: async (companyIds?: number[]) => {
-    const response = await axiosInstance.post("/api/scraping/start", {
-      company_ids: companyIds,
-    });
-    return response.data;
-  },
-
-  getScrapingStatus: async (taskId: string) => {
-    const response = await axiosInstance.get(`/api/scraping/status/${taskId}`);
-    return response.data;
-  },
-
-  scrapeCompany: async (companyId: number) => {
-    const response = await axiosInstance.post(
-      `/api/scraping/company/${companyId}`,
-    );
     return response.data;
   },
 
@@ -257,23 +244,6 @@ export const api = {
     return response;
   },
 
-  // Niche discovery
-  discoverySearch: async (payload: {
-    niche: string;
-    location: string;
-    business_type?: string;
-    max_results?: number;
-    auto_scrape?: boolean;
-  }) => {
-    const response = await axiosInstance.post("/api/discovery/search", payload);
-    return response.data;
-  },
-
-  discoveryStatus: async (taskId: string) => {
-    const response = await axiosInstance.get(`/api/discovery/status/${taskId}`);
-    return response.data;
-  },
-
   // Campaign templates
   getCampaignTemplates: async () => {
     const response = await axiosInstance.get("/api/emails/campaign-templates");
@@ -325,51 +295,6 @@ export const api = {
     const response = await axiosInstance.post("/api/emails/send-bulk", payload);
     return response.data;
   },
-
-  // LinkedIn
-  getLinkedInStatus: async () => {
-    const response = await axiosInstance.get("/api/linkedin/status");
-    return response.data;
-  },
-
-  getLinkedInConnectUrl: async () => {
-    const response = await axiosInstance.get("/api/linkedin/connect");
-    return response.data as { auth_url: string; state: string };
-  },
-
-  disconnectLinkedIn: async () => {
-    const response = await axiosInstance.delete("/api/linkedin/disconnect");
-    return response.data;
-  },
-
-  getLinkedInInmailUrl: async (companyId: number) => {
-    const response = await axiosInstance.get(
-      `/api/linkedin/inmail-url/${companyId}`,
-    );
-    return response.data as { inmail_url: string; contact_name: string | null };
-  },
-
-  sendLinkedInMessage: async (payload: {
-    company_id: number;
-    contact_linkedin_url?: string;
-    contact_name?: string;
-    message: string;
-  }) => {
-    const response = await axiosInstance.post(
-      "/api/linkedin/send-message",
-      payload,
-    );
-    return response.data;
-  },
-
-  markLinkedInSent: async (companyId: number) => {
-    const response = await axiosInstance.post(
-      `/api/linkedin/mark-sent/${companyId}`,
-    );
-    return response.data;
-  },
-
-  // Email open status (from email_logs) — defined above near Emails section
 
   // Settings
   getSettings: async () => {
