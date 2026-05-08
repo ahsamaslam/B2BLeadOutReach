@@ -1,12 +1,5 @@
 """
-Email service using Hostinger SMTP with optional portfolio file attachments.
-
-Anti-spam measures applied:
-  - multipart/alternative (HTML + plain-text fallback)
-  - proper Message-ID header
-  - List-Unsubscribe header
-  - unsubscribe footer in every email
-  - tracking pixel injected into HTML body
+Email service using SMTP with optional portfolio attachments.
 """
 import html
 import re
@@ -30,12 +23,14 @@ UPLOAD_DIR = Path("/app/uploads/portfolio")
 def _get_portfolio_files(user_id: Optional[int] = None) -> list[Path]:
     """Return all portfolio files, optionally filtered by user_id prefix."""
     if not UPLOAD_DIR.exists():
+        logger.warning("Portfolio upload directory does not exist: %s", UPLOAD_DIR)
         return []
     files = []
     for f in UPLOAD_DIR.iterdir():
         if f.is_file():
             if user_id is None or f.name.startswith(f"user{user_id}_"):
                 files.append(f)
+    logger.info("Found %d portfolio file(s) for user_id=%s: %s", len(files), user_id, [f.name for f in files])
     return files
 
 
@@ -49,7 +44,7 @@ def _html_to_plaintext(html_body: str) -> str:
 
 def _inject_tracking_pixel(body_html: str, tracking_token: str) -> str:
     """Append a 1×1 invisible tracking pixel before </body> (or at end)."""
-    base_url = settings.MY_COMPANY_WEBSITE.rstrip("/")
+    base_url = (settings.TRACKING_BASE_URL or settings.MY_COMPANY_WEBSITE).rstrip("/")
     pixel_url = f"{base_url}/api/tracking/open/{tracking_token}"
     pixel_tag = (
         f'<img src="{pixel_url}" width="1" height="1" '
@@ -84,6 +79,10 @@ def send_email(
     user_id: Optional[int] = None,
     tracking_token: Optional[str] = None,
     # Per-tenant FROM overrides — clients set their own name/address in Settings
+    smtp_host: Optional[str] = None,
+    smtp_port: Optional[int] = None,
+    smtp_user: Optional[str] = None,
+    smtp_password: Optional[str] = None,
     from_email: Optional[str] = None,
     from_name: Optional[str] = None,
 ) -> dict:
@@ -93,10 +92,14 @@ def send_email(
     sends from their own address using the platform's SMTP credentials.
     Returns {"success": True} or {"success": False, "error": str}.
     """
-    smtp_host = settings.SMTP_HOST
-    smtp_port = settings.SMTP_PORT
-    smtp_user = settings.SMTP_USER
-    smtp_password = settings.SMTP_PASSWORD
+    logger.info(
+        "send_email called: to=%s, subject=%s, attach_portfolio=%s, user_id=%s",
+        to_email, subject[:50] if subject else "N/A", attach_portfolio, user_id
+    )
+    smtp_host = smtp_host or settings.SMTP_HOST
+    smtp_port = int(smtp_port or settings.SMTP_PORT)
+    smtp_user = smtp_user or settings.SMTP_USER
+    smtp_password = smtp_password or settings.SMTP_PASSWORD
     from_email = from_email or settings.SMTP_FROM_EMAIL or smtp_user
     from_name = from_name or settings.SMTP_FROM_NAME
 
@@ -104,8 +107,8 @@ def send_email(
         logger.error("SMTP credentials not configured")
         return {"success": False, "error": "SMTP credentials not configured"}
 
-    # Inject tracking pixel + unsubscribe footer into HTML
-    enhanced_html = _add_unsubscribe_footer(body_html, to_email)
+    # Keep broadcast emails lightweight for better inbox placement.
+    enhanced_html = body_html
     if tracking_token:
         enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token)
 
@@ -116,9 +119,7 @@ def send_email(
     outer["Subject"] = subject
     outer["Message-ID"] = make_msgid(domain=from_email.split("@")[-1])
     outer["Date"] = formatdate(localtime=True)
-    outer["List-Unsubscribe"] = f"<mailto:{from_email}?subject=Unsubscribe>"
-    outer["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    outer["X-Mailer"] = "B2BLeadOutreach/1.0"
+    outer["Reply-To"] = from_email
 
     # multipart/alternative carries HTML + plain-text
     alternative = MIMEMultipart("alternative")
@@ -138,10 +139,26 @@ def send_email(
                 display_name = file_path.name
                 if user_id and display_name.startswith(f"user{user_id}_"):
                     display_name = display_name[len(f"user{user_id}_"):]
-                part.add_header("Content-Disposition", f'attachment; filename="{display_name}"')
+                # Properly encode filename for email clients
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=display_name
+                )
                 outer.attach(part)
+                logger.info("Attached portfolio file: %s", display_name)
             except Exception as exc:
                 logger.warning("Could not attach file %s: %s", file_path, exc)
+
+    # Debug: dump raw MIME message when attachments are included
+    if attach_portfolio:
+        try:
+            dump_path = UPLOAD_DIR.parent / "last_email.eml"
+            dump_path.parent.mkdir(parents=True, exist_ok=True)
+            dump_path.write_bytes(outer.as_bytes())
+            logger.info("Wrote email dump to %s", dump_path)
+        except Exception as exc:
+            logger.warning("Failed to write email dump: %s", exc)
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
@@ -149,7 +166,11 @@ def send_email(
             server.starttls()
             server.ehlo()
             server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, [to_email], outer.as_bytes())
+            refused = server.sendmail(from_email, [to_email], outer.as_bytes())
+            if refused:
+                reason = refused.get(to_email) or next(iter(refused.values()))
+                logger.error("SMTP rejected recipient %s: %s", to_email, reason)
+                return {"success": False, "error": f"SMTP rejected recipient: {reason}"}
         logger.info("Email sent to %s (tracking=%s)", to_email, tracking_token)
         return {"success": True}
     except Exception as exc:
@@ -158,17 +179,27 @@ def send_email(
 
 
 def test_smtp_connection(
+    smtp_host: Optional[str] = None,
+    smtp_port: Optional[int] = None,
+    smtp_user: Optional[str] = None,
+    smtp_password: Optional[str] = None,
     from_email: Optional[str] = None,
     **_kwargs,
 ) -> dict:
     """Verify SMTP credentials by opening a connection without sending."""
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+        smtp_host = smtp_host or settings.SMTP_HOST
+        smtp_port = int(smtp_port or settings.SMTP_PORT)
+        smtp_user = smtp_user or settings.SMTP_USER
+        smtp_password = smtp_password or settings.SMTP_PASSWORD
+        if not smtp_user or not smtp_password:
+            return {"success": False, "error": "SMTP credentials not configured"}
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
             server.ehlo()
             server.starttls()
             server.ehlo()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        display = from_email or settings.SMTP_FROM_EMAIL or settings.SMTP_USER
-        return {"success": True, "message": f"Connected to {settings.SMTP_HOST}:{settings.SMTP_PORT} — sending as {display}"}
+            server.login(smtp_user, smtp_password)
+        display = from_email or settings.SMTP_FROM_EMAIL or smtp_user
+        return {"success": True, "message": f"Connected to {smtp_host}:{smtp_port} — sending as {display}"}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

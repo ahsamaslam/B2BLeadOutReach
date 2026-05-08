@@ -32,6 +32,10 @@ const ALLOWED_TYPES = [
   "image/jpeg",
   "image/gif",
   "image/webp",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-zip",
+  "multipart/x-zip",
 ];
 
 function formatBytes(bytes: number): string {
@@ -145,7 +149,7 @@ export default function Portfolio() {
             Drag & drop files here, or click to browse
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            PDF, DOCX, PPTX, PNG, JPG — max 10 MB each
+            PDF, DOCX, PPTX, PNG, JPG, ZIP — max 10 MB each
           </Typography>
         </CardContent>
       </Card>
@@ -154,7 +158,7 @@ export default function Portfolio() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.zip"
         style={{ display: "none" }}
         onChange={handleFileChange}
       />
