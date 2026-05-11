@@ -24,6 +24,18 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
+// Auto-logout on 401 (expired / invalid token)
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      authStorage.clearToken();
+      window.location.reload();
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const api = {
   // Auth
   register: async (payload: { email: string; password: string }) => {
@@ -119,6 +131,18 @@ export const api = {
     const response = await axiosInstance.delete("/api/companies/bulk", {
       data: { ids },
     });
+    return response.data;
+  },
+
+  startScraping: async (companyIds?: number[]) => {
+    const response = await axiosInstance.post("/api/scraping/start", {
+      company_ids: companyIds ?? null,
+    });
+    return response.data;
+  },
+
+  getScrapingStatus: async (taskId: string) => {
+    const response = await axiosInstance.get(`/api/scraping/status/${taskId}`);
     return response.data;
   },
 

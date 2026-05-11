@@ -11,6 +11,7 @@ from app.api import tracking as tracking_api
 from app.api import settings as settings_api
 from app.api import admin as admin_api
 from app.api import followups as followups_api
+from app.api import scraping as scraping_api
 
 # Create all tables (new tables only — existing tables are not modified)
 Base.metadata.create_all(bind=engine)
@@ -30,6 +31,9 @@ def _run_migrations():
             "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS last_open_user_agent TEXT",
             # Email body storage for history view
             "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS body TEXT",
+            # Campaign templates: keep older DB schemas in sync with model
+            "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS instructions TEXT",
+            "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS attach_portfolio BOOLEAN DEFAULT FALSE",
             # Follow-up automation table
             """
             CREATE TABLE IF NOT EXISTS follow_up_logs (
@@ -92,6 +96,7 @@ app.include_router(tracking_api.router, prefix="/api/tracking", tags=["Tracking"
 app.include_router(settings_api.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(admin_api.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(followups_api.router, prefix="/api/followups", tags=["Followups"])
+app.include_router(scraping_api.router, prefix="/api/scraping", tags=["Scraping"])
 
 # ── Follow-up scheduler (APScheduler, runs inside FastAPI process) ────────────
 from apscheduler.schedulers.background import BackgroundScheduler

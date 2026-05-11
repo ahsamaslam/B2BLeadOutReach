@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Alert,
   Box,
@@ -14,6 +14,7 @@ import {
   FormControl,
   IconButton,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -30,6 +31,7 @@ import {
 } from "@mui/material";
 import {
   Add,
+  AutoFixHigh,
   Business,
   Delete,
   Description,
@@ -87,6 +89,47 @@ interface LeadsListProps {
 const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<number[]>([]);
+  const [scrapingTaskId, setScrapingTaskId] = useState<string | null>(null);
+  const [scrapingProgress, setScrapingProgress] = useState<number>(0);
+  const [scrapingTotal, setScrapingTotal] = useState<number>(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll scraping progress
+  useEffect(() => {
+    if (!scrapingTaskId) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await api.getScrapingStatus(scrapingTaskId);
+        setScrapingProgress(status.processed_companies);
+        setScrapingTotal(status.total_companies);
+        if (status.status === "completed") {
+          clearInterval(pollRef.current!);
+          setScrapingTaskId(null);
+          queryClient.invalidateQueries({ queryKey: ["companies"] });
+          toast.success(`Enrichment done: ${status.successful_companies} succeeded, ${status.failed_companies} failed`);
+        }
+      } catch {
+        clearInterval(pollRef.current!);
+        setScrapingTaskId(null);
+      }
+    }, 2000);
+    return () => clearInterval(pollRef.current!);
+  }, [scrapingTaskId, queryClient]);
+
+  const enrichMutation = useMutation({
+    mutationFn: (ids: number[] | undefined) => api.startScraping(ids),
+    onSuccess: (data) => {
+      if (data.task_id) {
+        setScrapingTaskId(data.task_id);
+        setScrapingProgress(0);
+        setScrapingTotal(data.total_companies);
+        toast.success(`Enrichment started for ${data.total_companies} leads…`);
+      } else {
+        toast("No leads to enrich");
+      }
+    },
+    onError: () => toast.error("Failed to start enrichment"),
+  });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterNiche, setFilterNiche] = useState<string>("");
@@ -163,6 +206,16 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
       toast.success("Lead deleted");
     },
     onError: () => toast.error("Failed to delete lead"),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => api.bulkDeleteCompanies(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setSelected([]);
+      toast.success("Selected leads deleted");
+    },
+    onError: () => toast.error("Failed to delete selected leads"),
   });
 
   const uploadMutation = useMutation({
@@ -305,6 +358,24 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
             onClick={() => setCreateOpen(true)}
           >
             Add Lead
+          </Button>
+          {/* Enrich / Scrape */}
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={<AutoFixHigh />}
+            size="small"
+            disabled={enrichMutation.isPending || !!scrapingTaskId}
+            onClick={() => {
+              const ids = selected.length > 0 ? selected : undefined;
+              enrichMutation.mutate(ids);
+            }}
+          >
+            {scrapingTaskId
+              ? `Enriching… ${scrapingProgress}/${scrapingTotal}`
+              : selected.length > 0
+              ? `Enrich ${selected.length} selected`
+              : "Enrich All Leads"}
           </Button>
           {/* Export */}
           <Button
@@ -453,6 +524,19 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
         </Box>
       </Paper>
 
+      {/* Enrichment progress bar */}
+      {scrapingTaskId && (
+        <Box mb={2}>
+          <Typography variant="body2" color="text.secondary" mb={0.5}>
+            Enriching leads… {scrapingProgress} / {scrapingTotal} processed
+          </Typography>
+          <LinearProgress
+            variant={scrapingTotal > 0 ? "determinate" : "indeterminate"}
+            value={scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0}
+          />
+        </Box>
+      )}
+
       {/* Filters */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle1" fontWeight={700} mb={1}>
@@ -550,6 +634,21 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           </Typography>
           <Button size="small" color="inherit" onClick={() => setSelected([])}>
             Deselect all
+          </Button>
+          <Button
+            size="small"
+            variant="contained"
+            color="error"
+            startIcon={<Delete />}
+            sx={{ ml: 1 }}
+            disabled={bulkDeleteMutation.isPending}
+            onClick={() => {
+              if (window.confirm(`Delete ${selected.length} selected lead${selected.length > 1 ? "s" : ""}? This cannot be undone.`)) {
+                bulkDeleteMutation.mutate(selected);
+              }
+            }}
+          >
+            Delete {selected.length} selected
           </Button>
         </Toolbar>
       )}

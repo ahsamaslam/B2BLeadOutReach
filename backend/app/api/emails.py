@@ -113,6 +113,15 @@ def _get_sender_full_name(user: User, db: Session) -> str:
     return _load_email_creds(user, db).get("sender_full_name") or ""
 
 
+def _assert_email_sending_configured(creds: dict) -> None:
+    """Fail fast with a clear message when SMTP credentials are missing."""
+    if not creds.get("smtp_user") or not creds.get("smtp_password"):
+        raise HTTPException(
+            status_code=400,
+            detail="Email sending is not configured. Please set SMTP_USER and SMTP_PASSWORD in Settings before sending.",
+        )
+
+
 
 def _resolve_template(db: Session, template_or_company_id: int) -> EmailTemplate | None:
     template = db.query(EmailTemplate).filter(EmailTemplate.id == template_or_company_id).first()
@@ -193,6 +202,9 @@ def send_approved_emails(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    creds = _load_email_creds(current_user, db)
+    _assert_email_sending_configured(creds)
+
     templates = db.query(EmailTemplate).filter(EmailTemplate.status == "approved").all()
 
     sent = 0
@@ -224,7 +236,7 @@ def send_approved_emails(
             attach_portfolio=payload.attach_portfolio,
             user_id=current_user.id,
             tracking_token=tracking_token,
-            **_load_email_creds(current_user, db),
+            **creds,
         )
 
         status = "sent" if result["success"] else "failed"
@@ -261,10 +273,13 @@ def test_smtp(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Verify Resend credentials (uses tenant key if configured, else global)."""
+    """Verify SMTP credentials (uses tenant settings if configured, else global)."""
     creds = _load_email_creds(current_user, db)
     return email_service.test_smtp_connection(
-        api_key=creds.get("api_key"),
+        smtp_host=creds.get("smtp_host"),
+        smtp_port=creds.get("smtp_port"),
+        smtp_user=creds.get("smtp_user"),
+        smtp_password=creds.get("smtp_password"),
         from_email=creds.get("from_email"),
     )
 
@@ -371,6 +386,8 @@ async def send_bulk_emails(
     sent = 0
     failed = 0
     errors: list[str] = []
+    creds = _load_email_creds(current_user, db)
+    _assert_email_sending_configured(creds)
 
     for company in companies:
         contacts_by_role: dict[str, Contact] = {}
@@ -414,7 +431,7 @@ async def send_bulk_emails(
             attach_portfolio=payload.attach_portfolio or tmpl.attach_portfolio,
             user_id=current_user.id,
             tracking_token=tracking_token,
-            **_load_email_creds(current_user, db),
+            **creds,
         )
 
         status = "sent" if result["success"] else "failed"
@@ -563,6 +580,7 @@ async def send_ai_emails(
     items = []
 
     creds = _load_email_creds(current_user, db)
+    _assert_email_sending_configured(creds)
     # Strip keys that don't belong in send_email() signature
     _EXTRA_KEYS = {"sender_full_name", "tracking_base_url"}
     send_creds = {k: v for k, v in creds.items() if k not in _EXTRA_KEYS}

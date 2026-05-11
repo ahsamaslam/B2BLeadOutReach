@@ -324,7 +324,12 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
         return next;
       });
       if (result.failed > 0) {
-        toast.error(`${result.sent} sent, ${result.failed} failed`);
+        const firstError = result.items?.find((item: any) => !item.success)?.error;
+        toast.error(
+          firstError
+            ? `${result.sent} sent, ${result.failed} failed. ${firstError}`
+            : `${result.sent} sent, ${result.failed} failed`,
+        );
       } else {
         toast.success(`Broadcast completed: ${result.sent} sent`);
         onBroadcastComplete?.();

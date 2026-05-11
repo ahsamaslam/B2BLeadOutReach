@@ -1,4 +1,5 @@
 from io import BytesIO
+import re
 from typing import List, Optional
 
 import pandas as pd
@@ -42,23 +43,18 @@ class ManualLeadCreate(BaseModel):
 def download_template():
     """Return a sample Excel file showing the expected upload format."""
     sample_data = {
-        "Company_Name": [
-            "Acme Corp",
-            "Globex Industries",
-            "Initech Solutions",
-        ],
-        "Website": [
-            "https://acmecorp.com",
-            "https://globex.com",
-            "https://initech.com",
-        ],
+        "Company_Name": ["Acme Corp", "Globex Industries", "Initech Solutions"],
+        "Website": ["https://acmecorp.com", "https://globex.com", "https://initech.com"],
         "Industry": ["Manufacturing", "Energy", "Software"],
         "Location": ["New York, USA", "Springfield, USA", "Austin, USA"],
         "Niche": ["Industrial equipment", "Energy supply", "HR software"],
         "Address": ["123 Main St, New York, NY 10001", "", "456 Tech Ave, Austin, TX 78701"],
         "Business_Type": ["independent", "franchise", "independent"],
-        "Employees": ["500-1000", "1000-5000", "50-200"],
-        "Notes": ["'independent' or 'franchise'", "", ""],
+        "Phone": ["212-555-0100", "417-555-0199", "512-555-0177"],
+        "Owner_Name": ["John Smith", "Jane Doe", "Bob Johnson"],
+        "Owner_Email": ["john@acmecorp.com", "jane@globex.com", "bob@initech.com"],
+        "Owner_Phone": ["212-555-0101", "", "512-555-0178"],
+        "Email": ["info@acmecorp.com", "info@globex.com", "info@initech.com"],
     }
     df = pd.DataFrame(sample_data)
     buf = BytesIO()
@@ -88,41 +84,160 @@ async def upload_companies(
     else:
         df = pd.read_excel(BytesIO(content))
 
-    required_cols = {"Company_Name", "Website"}
-    if not required_cols.issubset(set(df.columns)):
-        raise HTTPException(status_code=400, detail="File must contain Company_Name and Website columns")
+    def _norm_header(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+    normalized_headers: dict[str, str] = {}
+    for col in df.columns:
+        normalized_headers[_norm_header(col)] = col
+
+    def _resolve_cols(*aliases: str) -> list[str]:
+        resolved: list[str] = []
+        seen: set[str] = set()
+        for alias in aliases:
+            direct = alias if alias in df.columns else None
+            normalized = normalized_headers.get(_norm_header(alias))
+            for candidate in (direct, normalized):
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    resolved.append(candidate)
+        return resolved
+
+    company_name_cols = _resolve_cols(
+        "Company_Name",
+        "Company Name",
+        "Company",
+        "Business Name",
+    )
+    if not company_name_cols:
+        raise HTTPException(
+            status_code=400,
+            detail="File must contain a company name column (for example: Company_Name or Company Name)",
+        )
+
+    website_cols = _resolve_cols(
+        "Website",
+        "Website / Online Store",
+        "Website/Online Store",
+        "URL",
+        "Web",
+    )
+    niche_cols = _resolve_cols(
+        "Niche",
+        "Industry",
+        "Industry / Sub-Niche",
+        "Sub-Niche",
+        "Category",
+    )
+    location_cols = _resolve_cols(
+        "Location",
+        "Region",
+        "Region / State",
+        "State",
+        "City",
+    )
+    address_cols = _resolve_cols("Address")
+    business_type_cols = _resolve_cols("Business_Type", "Business Type", "Type")
+    phone_cols = _resolve_cols(
+        "Phone",
+        "Phone_Number",
+        "Mobile",
+        "Tel",
+        "Telephone",
+        "Company_Phone",
+    )
+
+    owner_name_cols = _resolve_cols(
+        "Owner_Name",
+        "Owner",
+        "CEO_Name",
+        "CEO",
+        "Contact_Name",
+        "Contact",
+        "Decision Maker",
+        "Decision_Maker",
+    )
+    owner_email_cols = _resolve_cols(
+        "Owner_Email",
+        "Email",
+        "Email Pattern",
+        "Email Pattern (verify via Hunter/Apollo)",
+        "CEO_Email",
+        "Contact_Email",
+        "Email_Address",
+    )
+    owner_phone_cols = _resolve_cols(
+        "Owner_Phone",
+        "CEO_Phone",
+        "Contact_Phone",
+        "Direct_Phone",
+    )
+    contact_role_cols = _resolve_cols("Decision Maker Role", "Role", "Title")
 
     added = 0
     skipped = 0
     errors: list[str] = []
 
+    def _col(row, columns: list[str]) -> str | None:
+        for name in columns:
+            val = str(row.get(name, "")).strip()
+            if val and val.lower() != "nan":
+                return val
+        return None
+
     for _, row in df.iterrows():
         try:
-            name = str(row["Company_Name"]).strip()
-            website = str(row["Website"]).strip()
-            if not name or not website or name == "nan" or website == "nan":
+            name = _col(row, company_name_cols) or ""
+            if not name or name.lower() == "nan":
                 skipped += 1
                 continue
 
-            exists = db.query(Company).filter(Company.name == name, Company.website == website).first()
+            website = _col(row, website_cols) or ""
+            if website and not website.startswith(("http://", "https://")):
+                website = "https://" + website
+
+            exists = db.query(Company).filter(Company.name == name).first()
             if exists:
                 skipped += 1
                 continue
 
-            # Optional enrichment columns from the spreadsheet
-            def _col(col_name: str) -> str | None:
-                val = str(row.get(col_name, "")).strip()
-                return val if val and val != "nan" else None
+            # Company-level fields
+            niche = _col(row, niche_cols)
+            location = _col(row, location_cols)
+            address = _col(row, address_cols)
+            biz_type = _col(row, business_type_cols)
+            phone = _col(row, phone_cols)
 
-            db.add(Company(
+            company = Company(
                 name=name,
                 website=website,
-                niche=_col("Niche"),
-                location=_col("Location"),
-                address=_col("Address"),
-                business_type=_col("Business_Type"),
+                niche=niche,
+                location=location,
+                address=address,
+                business_type=biz_type or "independent",
+                phone=phone,
                 status="created",
-            ))
+            )
+            db.add(company)
+            db.flush()  # get company.id
+
+            # Owner / primary contact
+            owner_name = _col(row, owner_name_cols)
+            owner_email = _col(row, owner_email_cols)
+            owner_phone = _col(row, owner_phone_cols)
+            contact_role = (_col(row, contact_role_cols) or "CEO").upper()
+
+            if owner_name or owner_email:
+                db.add(Contact(
+                    company_id=company.id,
+                    role=contact_role,
+                    name=owner_name,
+                    email=owner_email,
+                    phone=owner_phone,
+                ))
+                # If we already have contact data, mark as data_parsed
+                company.status = "data_parsed"
+
             added += 1
         except Exception as exc:
             errors.append(str(exc))
