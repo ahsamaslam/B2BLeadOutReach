@@ -55,7 +55,16 @@ class Settings(BaseSettings):
     MY_COMPANY_CONTACT: str = "contact@example.com"
     SENDER_FULL_NAME: str = ""
     TRACKING_BASE_URL: Optional[str] = None
-    
+
+    # Follow-up automation
+    FOLLOWUP_ENABLED: bool = False
+    FOLLOWUP_MAX_ROUNDS: int = 2
+    FOLLOWUP_1_DAYS_UNOPENED: int = 3
+    FOLLOWUP_2_DAYS_UNOPENED: int = 7
+    FOLLOWUP_3_DAYS_UNOPENED: int = 14
+    FOLLOWUP_1_DAYS_OPENED: int = 2
+    FOLLOWUP_2_DAYS_OPENED: int = 5
+
     # LinkedIn OAuth2 (optional)
     LINKEDIN_CLIENT_ID: Optional[str] = None
     LINKEDIN_CLIENT_SECRET: Optional[str] = None

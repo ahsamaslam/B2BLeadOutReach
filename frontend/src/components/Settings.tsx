@@ -25,6 +25,7 @@ import {
   Business,
   Email,
   TrackChanges,
+  ScheduleSend,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -40,6 +41,11 @@ const CATEGORY_META: Record<
     label: "Email Tracking",
     icon: <TrackChanges />,
     color: "#7b1fa2",
+  },
+  followup: {
+    label: "Follow-up Automation",
+    icon: <ScheduleSend />,
+    color: "#e65100",
   },
 };
 
@@ -155,13 +161,13 @@ const Settings: React.FC = () => {
           </Alert>
 
           <Grid container spacing={3}>
-            {Object.entries(schema).map(([category, fields]) => {
+            {Object.entries(schema).flatMap(([category, fields]) => {
               const meta = CATEGORY_META[category] ?? {
                 label: category,
                 icon: null,
                 color: "#333",
               };
-              return (
+              const card = (
                 <Grid item xs={12} key={category}>
                   <Paper variant="outlined" sx={{ overflow: "hidden" }}>
                     <Box
@@ -238,6 +244,87 @@ const Settings: React.FC = () => {
                   </Paper>
                 </Grid>
               );
+              if (category !== "email") return [card];
+              return [
+                card,
+                <Grid item xs={12} key="dns-notice">
+                  <Paper
+                    variant="outlined"
+                    sx={{ overflow: "hidden", borderColor: "warning.main" }}
+                  >
+                    <Box
+                      px={3}
+                      py={1.5}
+                      display="flex"
+                      alignItems="center"
+                      gap={1}
+                      sx={{
+                        borderBottom: "1px solid",
+                        borderColor: "warning.light",
+                        bgcolor: "#fff8e1",
+                      }}
+                    >
+                      <Typography fontWeight="bold" color="warning.dark">
+                        ⚠️ DNS &amp; Deliverability — Required for Inbox
+                        Delivery
+                      </Typography>
+                    </Box>
+                    <Box p={3}>
+                      <Typography variant="body2" color="text.secondary" mb={2}>
+                        These must be configured at your domain registrar or DNS
+                        provider. Without them, emails can still land in spam
+                        regardless of the SMTP settings above.
+                      </Typography>
+                      {[
+                        {
+                          label: "SPF Record",
+                          code: "v=spf1 include:your-smtp-provider.com ~all",
+                          desc: "Add as a TXT record on your sending domain. Tells receiving servers which IPs are authorised to send on your behalf.",
+                        },
+                        {
+                          label: "DKIM Signing",
+                          code: "Enable in your SMTP provider dashboard (Hostinger, Google Workspace, etc.)",
+                          desc: "Cryptographically signs every outgoing email. Your provider generates the DNS record for you to add to your domain.",
+                        },
+                        {
+                          label: "DMARC Record",
+                          code: "v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com",
+                          desc: "Add as a TXT record at _dmarc.yourdomain.com. Ties SPF + DKIM together and tells receivers how to handle authentication failures.",
+                        },
+                      ].map(({ label, code, desc }) => (
+                        <Box key={label} mb={2.5}>
+                          <Typography
+                            variant="subtitle2"
+                            fontWeight="bold"
+                            gutterBottom
+                          >
+                            {label}
+                          </Typography>
+                          <Box
+                            component="code"
+                            sx={{
+                              display: "block",
+                              bgcolor: "grey.100",
+                              px: 2,
+                              py: 1,
+                              borderRadius: 1,
+                              fontFamily: "monospace",
+                              fontSize: 13,
+                              wordBreak: "break-all",
+                              mb: 0.5,
+                            }}
+                          >
+                            {code}
+                          </Box>
+                          <Typography variant="caption" color="text.secondary">
+                            {desc}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Paper>
+                </Grid>,
+              ];
             })}
           </Grid>
         </>

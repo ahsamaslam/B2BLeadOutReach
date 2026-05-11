@@ -71,6 +71,7 @@ class Company(Base):
     contacts = relationship("Contact", back_populates="company", cascade="all, delete-orphan")
     email_templates = relationship("EmailTemplate", back_populates="company", cascade="all, delete-orphan")
     email_logs = relationship("EmailLog", back_populates="company", cascade="all, delete-orphan")
+    follow_up_logs = relationship("FollowUpLog", back_populates="company", cascade="all, delete-orphan")
     scrape_metadata = relationship("ScrapeMetadata", back_populates="company", cascade="all, delete-orphan", uselist=False)
 
 
@@ -162,6 +163,41 @@ class EmailLog(Base):
     # Relationships
     template = relationship("EmailTemplate", back_populates="email_logs")
     company = relationship("Company", back_populates="email_logs")
+    follow_up_logs = relationship("FollowUpLog", back_populates="parent_log", cascade="all, delete-orphan")
+
+
+class FollowUpLog(Base):
+    """Tracks scheduled and sent follow-up emails for each original EmailLog."""
+    __tablename__ = "follow_up_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    parent_log_id = Column(Integer, ForeignKey("email_logs.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    round_number = Column(Integer, nullable=False, default=1)  # 1, 2, or 3
+
+    recipient_email = Column(String(255), nullable=False)
+    recipient_name = Column(String(255), nullable=True)
+    subject = Column(String(500), nullable=True)
+    body = Column(Text, nullable=True)
+
+    status = Column(String(50), default="pending", index=True)
+    # Status values: pending, sent, failed, skipped
+
+    scheduled_at = Column(DateTime, nullable=True, index=True)
+    sent_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Open tracking (same mechanism as EmailLog)
+    tracking_token = Column(String(36), unique=True, index=True, nullable=True)
+    opened_at = Column(DateTime, nullable=True)
+    open_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    parent_log = relationship("EmailLog", back_populates="follow_up_logs")
+    company = relationship("Company", back_populates="follow_up_logs")
 
 
 class LinkedInToken(Base):

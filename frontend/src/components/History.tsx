@@ -33,6 +33,7 @@ import {
   Visibility,
   Close,
   DeleteOutline,
+  ForwardToInbox,
 } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
@@ -75,6 +76,233 @@ function parseMailClient(ua: string | null): string {
 }
 
 // â”€â”€ Detail Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Follow-ups Dialog ────────────────────────────────────────────────────────────────────────
+type FollowUpEntry = {
+  id: number;
+  round_number: number;
+  status: string;
+  subject: string | null;
+  body: string | null;
+  recipient_email: string;
+  recipient_name: string | null;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  opened_at: string | null;
+  open_count: number;
+  error_message: string | null;
+};
+
+const STATUS_COLOR: Record<
+  string,
+  "default" | "warning" | "success" | "error" | "info"
+> = {
+  pending: "warning",
+  sent: "success",
+  failed: "error",
+  skipped: "default",
+};
+
+const FollowUpsDialog: React.FC<{
+  lead: SentLead | null;
+  onClose: () => void;
+}> = ({ lead, onClose }) => {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const { data: followUps, isLoading } = useQuery<FollowUpEntry[]>({
+    queryKey: ["followups", lead?.id],
+    queryFn: () => api.getFollowUps(lead!.id),
+    enabled: !!lead,
+  });
+
+  const fmt = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : "—";
+
+  if (!lead) return null;
+
+  return (
+    <Dialog open={!!lead} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          pb: 1,
+        }}
+      >
+        <Box>
+          <Typography variant="h6" fontWeight="bold">
+            Follow-ups — {lead.name}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Original: {lead.subject || "—"}
+          </Typography>
+        </Box>
+        <IconButton onClick={onClose} size="small">
+          <Close />
+        </IconButton>
+      </DialogTitle>
+      <Divider />
+      <DialogContent sx={{ pt: 2 }}>
+        {isLoading ? (
+          <Box display="flex" justifyContent="center" py={4}>
+            <CircularProgress />
+          </Box>
+        ) : !followUps || followUps.length === 0 ? (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            py={5}
+            gap={1}
+          >
+            <ForwardToInbox sx={{ fontSize: 48, color: "text.disabled" }} />
+            <Typography color="text.secondary">
+              No follow-ups scheduled for this lead.
+            </Typography>
+            <Typography variant="caption" color="text.disabled">
+              Follow-ups are scheduled automatically when you send an email with
+              Follow-up Automation enabled in Settings.
+            </Typography>
+          </Box>
+        ) : (
+          <Box display="flex" flexDirection="column" gap={2}>
+            {followUps.map((fu) => (
+              <Paper
+                key={fu.id}
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  borderColor:
+                    fu.status === "sent"
+                      ? "success.light"
+                      : fu.status === "failed"
+                        ? "error.light"
+                        : fu.status === "skipped"
+                          ? "grey.300"
+                          : "warning.light",
+                  bgcolor:
+                    fu.status === "sent"
+                      ? "#f1f8e9"
+                      : fu.status === "failed"
+                        ? "#fff3f3"
+                        : fu.status === "pending"
+                          ? "#fffde7"
+                          : "grey.50",
+                }}
+              >
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  mb={1}
+                >
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Chip
+                      label={`Round ${fu.round_number}`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      sx={{ fontWeight: 700 }}
+                    />
+                    <Chip
+                      label={
+                        fu.status.charAt(0).toUpperCase() + fu.status.slice(1)
+                      }
+                      size="small"
+                      color={STATUS_COLOR[fu.status] ?? "default"}
+                    />
+                    {fu.opened_at && (
+                      <Chip
+                        icon={<MarkEmailRead fontSize="small" />}
+                        label={
+                          fu.open_count > 1
+                            ? `Opened ×${fu.open_count}`
+                            : "Opened"
+                        }
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                      />
+                    )}
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {fu.status === "pending"
+                      ? `Scheduled: ${fmt(fu.scheduled_at)}`
+                      : fu.status === "sent"
+                        ? `Sent: ${fmt(fu.sent_at)}`
+                        : fu.status === "skipped"
+                          ? `Skipped (${fu.error_message || "replied"})`
+                          : `Failed: ${fu.error_message || "unknown error"}`}
+                  </Typography>
+                </Box>
+
+                {fu.subject && (
+                  <Typography variant="body2" fontWeight={600} mb={0.5}>
+                    Subject: {fu.subject}
+                  </Typography>
+                )}
+
+                {fu.body && (
+                  <Box>
+                    <Button
+                      size="small"
+                      variant="text"
+                      sx={{ px: 0, textTransform: "none", fontSize: 12 }}
+                      onClick={() =>
+                        setExpandedId(expandedId === fu.id ? null : fu.id)
+                      }
+                    >
+                      {expandedId === fu.id
+                        ? "▲ Hide body"
+                        : "▼ Show email body"}
+                    </Button>
+                    {expandedId === fu.id && (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 1.5,
+                          mt: 0.5,
+                          maxHeight: 320,
+                          overflowY: "auto",
+                          bgcolor: "#fff",
+                        }}
+                      >
+                        <div
+                          dangerouslySetInnerHTML={{ __html: fu.body }}
+                          style={{
+                            fontSize: 13,
+                            lineHeight: 1.6,
+                            fontFamily: "inherit",
+                          }}
+                        />
+                      </Paper>
+                    )}
+                  </Box>
+                )}
+
+                {fu.status === "pending" && !fu.body && (
+                  <Typography variant="caption" color="text.secondary">
+                    Body will be AI-generated at send time.
+                  </Typography>
+                )}
+              </Paper>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 const DetailDialog: React.FC<{
   lead: SentLead | null;
   onClose: () => void;
@@ -203,6 +431,9 @@ const History: React.FC = () => {
   const [search, setSearch] = useState("");
   const [viewing, setViewing] = useState<SentLead | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SentLead | null>(null);
+  const [viewingFollowUps, setViewingFollowUps] = useState<SentLead | null>(
+    null,
+  );
 
   const queryClient = useQueryClient();
 
@@ -372,6 +603,7 @@ const History: React.FC = () => {
                 <TableCell>Sent At</TableCell>
                 <TableCell align="center">Open Status</TableCell>
                 <TableCell align="center">View</TableCell>
+                <TableCell align="center">Follow-ups</TableCell>
                 <TableCell align="center">Delete</TableCell>
               </TableRow>
             </TableHead>
@@ -491,6 +723,17 @@ const History: React.FC = () => {
                       </Tooltip>
                     </TableCell>
                     <TableCell align="center">
+                      <Tooltip title="View follow-ups">
+                        <IconButton
+                          size="small"
+                          color="info"
+                          onClick={() => setViewingFollowUps(lead)}
+                        >
+                          <ForwardToInbox fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell align="center">
                       <Tooltip title="Delete lead">
                         <IconButton
                           size="small"
@@ -510,6 +753,10 @@ const History: React.FC = () => {
       )}
 
       <DetailDialog lead={viewing} onClose={() => setViewing(null)} />
+      <FollowUpsDialog
+        lead={viewingFollowUps}
+        onClose={() => setViewingFollowUps(null)}
+      />
 
       {/* ── Delete confirmation ── */}
       <Dialog

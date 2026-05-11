@@ -245,6 +245,10 @@ def send_approved_emails(
             template.status = "sent"
             company.status = "sent"
             sent += 1
+            # Schedule follow-ups for this lead
+            db.flush()  # get log.id
+            from app.api.followups import schedule_followups
+            schedule_followups(log, db, tenant_id=current_user.tenant_id)
         else:
             failed += 1
 
@@ -430,6 +434,10 @@ async def send_bulk_emails(
         if result["success"]:
             company.status = "sent"
             sent += 1
+            # Schedule follow-ups for this lead
+            db.flush()  # get log.id
+            from app.api.followups import schedule_followups
+            schedule_followups(log, db, tenant_id=current_user.tenant_id)
         else:
             failed += 1
             errors.append(f"{company.name}: {result.get('error', 'send failed')}")
@@ -480,7 +488,10 @@ def generate_ai_emails(
             "Use the template as a structural and stylistic guide, but tailor every sentence specifically to the recipient's company and context. "
             "Return a JSON object with exactly two keys: \"subject\" and \"body\". "
             "The \"body\" value MUST be valid HTML — use <p> tags for paragraphs, <br> for line breaks, <strong> for bold text. "
-            "Do NOT use plain newlines for line breaks. Do NOT wrap the HTML in <html> or <body> tags. No markdown, no extra text outside the JSON."
+            "Do NOT use plain newlines for line breaks. Do NOT wrap the HTML in <html> or <body> tags. No markdown, no extra text outside the JSON. "
+            "IMPORTANT for subject lines: write like a message from a real colleague — short, specific, no spam trigger words. "
+            "Never use: ALL CAPS, excessive punctuation (!!!, ???), words like FREE, URGENT, LIMITED TIME, GUARANTEED, DISCOUNT, OFFER, DEAL, CLICK HERE, ACT NOW, or any monetary symbols ($$$). "
+            "Subject lines should be 4–9 words, conversational, and reference something specific about the recipient's company."
             + sender_block
             + instructions_block
         )
@@ -594,6 +605,10 @@ async def send_ai_emails(
                 tracking_token=tracking_token,
             )
             db.add(log)
+            # Schedule follow-ups for this lead
+            db.flush()  # get log.id
+            from app.api.followups import schedule_followups
+            schedule_followups(log, db, tenant_id=current_user.tenant_id)
             items.append({"lead_index": email.lead_index, "success": True})
         else:
             failed += 1

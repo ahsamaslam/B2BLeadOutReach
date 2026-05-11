@@ -10,6 +10,7 @@ from app.api import auth, companies, emails, analytics, portfolio as portfolio_a
 from app.api import tracking as tracking_api
 from app.api import settings as settings_api
 from app.api import admin as admin_api
+from app.api import followups as followups_api
 
 # Create all tables (new tables only — existing tables are not modified)
 Base.metadata.create_all(bind=engine)
@@ -29,6 +30,27 @@ def _run_migrations():
             "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS last_open_user_agent TEXT",
             # Email body storage for history view
             "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS body TEXT",
+            # Follow-up automation table
+            """
+            CREATE TABLE IF NOT EXISTS follow_up_logs (
+                id SERIAL PRIMARY KEY,
+                parent_log_id INTEGER REFERENCES email_logs(id) ON DELETE CASCADE,
+                company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+                round_number INTEGER NOT NULL DEFAULT 1,
+                recipient_email VARCHAR(255) NOT NULL,
+                recipient_name VARCHAR(255),
+                subject VARCHAR(500),
+                body TEXT,
+                status VARCHAR(50) DEFAULT 'pending',
+                scheduled_at TIMESTAMP,
+                sent_at TIMESTAMP,
+                error_message TEXT,
+                tracking_token VARCHAR(36) UNIQUE,
+                opened_at TIMESTAMP,
+                open_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+            """,
         ]
         for stmt in stmts:
             try:
@@ -69,6 +91,38 @@ app.include_router(portfolio_api.router, prefix="/api/portfolio", tags=["Portfol
 app.include_router(tracking_api.router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(admin_api.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(followups_api.router, prefix="/api/followups", tags=["Followups"])
+
+# ── Follow-up scheduler (APScheduler, runs inside FastAPI process) ────────────
+from apscheduler.schedulers.background import BackgroundScheduler
+
+_scheduler = BackgroundScheduler(timezone="UTC")
+
+@app.on_event("startup")
+def start_followup_scheduler():
+    from app.api.followups import process_due_followups
+    from app.database import SessionLocal
+
+    def _run_followup_job():
+        db = SessionLocal()
+        try:
+            count = process_due_followups(db)
+            if count:
+                import logging
+                logging.getLogger(__name__).info("Follow-up scheduler: processed %d follow-up(s)", count)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Follow-up scheduler error: %s", exc)
+        finally:
+            db.close()
+
+    _scheduler.add_job(_run_followup_job, "interval", minutes=15, id="followup_job", replace_existing=True)
+    _scheduler.start()
+
+@app.on_event("shutdown")
+def stop_followup_scheduler():
+    if _scheduler.running:
+        _scheduler.shutdown(wait=False)
 
 # Serve uploaded files at /uploads/<filename>
 app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")

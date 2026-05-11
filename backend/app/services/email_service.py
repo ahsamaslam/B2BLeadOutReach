@@ -110,6 +110,7 @@ def send_email(
     smtp_password: Optional[str] = None,
     from_email: Optional[str] = None,
     from_name: Optional[str] = None,
+    **_kwargs,  # absorb extra keys (e.g. sender_full_name) passed via **_load_email_creds()
 ) -> dict:
     """
     Send an email via Hostinger SMTP.
@@ -150,7 +151,9 @@ def send_email(
     # Deliverability headers — reduce spam score, enable one-click unsubscribe
     outer["List-Unsubscribe"] = f"<mailto:{from_email}?subject=Unsubscribe>"
     outer["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    outer["Precedence"] = "bulk"
+    # X-Priority 3 = Normal (not bulk/low) — avoids spam routing
+    outer["X-Priority"] = "3"
+    outer["X-MSMail-Priority"] = "Normal"
     if tracking_token:
         # Unique reference prevents Gmail from collapsing repeated sends into one thread
         outer["X-Entity-Ref-ID"] = tracking_token

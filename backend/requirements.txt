@@ -33,6 +33,7 @@ openpyxl==3.1.2
 # Background tasks
 celery==5.3.4
 redis==5.0.1
+apscheduler>=3.10.0
 
 # Email
 aiosmtplib==3.0.1

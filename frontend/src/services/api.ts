@@ -436,4 +436,24 @@ export const api = {
       total: number;
     };
   },
+
+  getFollowUps: async (companyId: number) => {
+    const response = await axiosInstance.get(
+      `/api/followups/company/${companyId}`,
+    );
+    return response.data as Array<{
+      id: number;
+      round_number: number;
+      status: string;
+      subject: string | null;
+      body: string | null;
+      recipient_email: string;
+      recipient_name: string | null;
+      scheduled_at: string | null;
+      sent_at: string | null;
+      opened_at: string | null;
+      open_count: number;
+      error_message: string | null;
+    }>;
+  },
 };
