@@ -19,7 +19,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Add, AttachFile, Delete, Edit } from "@mui/icons-material";
+import { Add, Delete, Edit } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
@@ -29,6 +29,7 @@ interface CampaignTemplate {
   name: string;
   subject_template: string;
   body_template: string;
+  instructions: string | null;
   attach_portfolio: boolean;
   created_at: string;
   updated_at: string;
@@ -46,6 +47,7 @@ const EMPTY_FORM = {
   name: "",
   subject_template: "",
   body_template: "",
+  instructions: "",
   attach_portfolio: false,
 };
 
@@ -97,6 +99,7 @@ const CampaignTemplates: React.FC = () => {
         name: tmpl.name,
         subject_template: tmpl.subject_template,
         body_template: tmpl.body_template,
+        instructions: tmpl.instructions ?? "",
         attach_portfolio: tmpl.attach_portfolio,
       });
     } else {
@@ -183,15 +186,6 @@ const CampaignTemplates: React.FC = () => {
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     {tmpl.name}
                   </Typography>
-                  {tmpl.attach_portfolio && (
-                    <Chip
-                      icon={<AttachFile />}
-                      label="Portfolio attached"
-                      size="small"
-                      color="secondary"
-                      variant="outlined"
-                    />
-                  )}
                 </Box>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   <strong>Subject:</strong> {tmpl.subject_template}
@@ -209,6 +203,30 @@ const CampaignTemplates: React.FC = () => {
                 >
                   {tmpl.body_template}
                 </Typography>
+                {tmpl.instructions && (
+                  <>
+                    <Divider sx={{ my: 1 }} />
+                    <Typography
+                      variant="caption"
+                      color="primary.main"
+                      fontWeight={600}
+                      display="block"
+                    >
+                      AI Instructions:
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
+                        fontSize: "0.8rem",
+                        mt: 0.25,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {tmpl.instructions}
+                    </Typography>
+                  </>
+                )}
               </CardContent>
               <CardActions sx={{ justifyContent: "flex-end", pt: 0 }}>
                 <Tooltip title="Edit">
@@ -297,28 +315,18 @@ const CampaignTemplates: React.FC = () => {
               helperText="AI will use this as a style guide and personalise it with each company's data"
             />
 
-            <Box display="flex" alignItems="center" gap={1}>
-              <Chip
-                icon={<AttachFile />}
-                label={
-                  form.attach_portfolio
-                    ? "Attach portfolio by default: ON"
-                    : "Attach portfolio by default: OFF"
-                }
-                color={form.attach_portfolio ? "secondary" : "default"}
-                variant={form.attach_portfolio ? "filled" : "outlined"}
-                clickable
-                onClick={() =>
-                  setForm((p) => ({
-                    ...p,
-                    attach_portfolio: !p.attach_portfolio,
-                  }))
-                }
-              />
-              <Typography variant="caption" color="text.secondary">
-                You can override this when sending
-              </Typography>
-            </Box>
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              label="AI Instructions (optional)"
+              placeholder={`e.g. Keep the tone professional and concise. Focus on cost-saving benefits. Always end with a specific call-to-action. Avoid mentioning pricing.`}
+              value={form.instructions}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, instructions: e.target.value }))
+              }
+              helperText="Guidance for the AI agent when personalising this template — tone, focus areas, things to avoid, structure hints"
+            />
           </Box>
         </DialogContent>
         <DialogActions>

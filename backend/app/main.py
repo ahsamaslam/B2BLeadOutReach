@@ -24,6 +24,11 @@ def _run_migrations():
             # business_type — ensure it exists and existing rows default to 'independent'
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) DEFAULT 'independent'",
             "UPDATE companies SET business_type = 'independent' WHERE business_type IS NULL",
+            # Email open tracking — open count and last user agent
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS open_count INTEGER DEFAULT 0",
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS last_open_user_agent TEXT",
+            # Email body storage for history view
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS body TEXT",
         ]
         for stmt in stmts:
             try:

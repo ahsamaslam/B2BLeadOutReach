@@ -42,6 +42,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import {
+  BROADCAST_LEADS_STORAGE_KEY,
+  type BroadcastLeadPayload,
+} from "../broadcastLeads";
 
 interface Contact {
   id: number;
@@ -180,6 +184,8 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   });
 
   const filtered = companies.filter((c) => {
+    // Sent leads live in History — hide from this page
+    if (c.status === "sent") return false;
     if (filterStatus && c.status !== filterStatus) return false;
     if (filterNiche && c.niche !== filterNiche) return false;
     if (filterLocation && c.location !== filterLocation) return false;
@@ -324,7 +330,41 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
               color="primary"
               startIcon={<Email />}
               size="small"
-              onClick={() => onSendToSelected(selected)}
+              onClick={() => {
+                const selectedCompanies = companies.filter((c) =>
+                  selected.includes(c.id),
+                );
+                const payloads: BroadcastLeadPayload[] = selectedCompanies.map(
+                  (c) => {
+                    const primary = getPrimaryContact(c.contacts);
+                    return {
+                      id: c.id,
+                      company_name: c.name,
+                      niche: c.niche ?? "",
+                      domain: c.website ?? "",
+                      location: c.location ?? "",
+                      platform: c.business_type ?? "",
+                      decision_maker: primary?.name ?? "",
+                      owner_name: primary?.name ?? "",
+                      role: primary?.role ?? "",
+                      linkedin: "",
+                      email_pattern: "",
+                      ai_gap: "",
+                      remarks: "",
+                      email: primary?.email ?? undefined,
+                    };
+                  },
+                );
+                try {
+                  localStorage.setItem(
+                    BROADCAST_LEADS_STORAGE_KEY,
+                    JSON.stringify(payloads),
+                  );
+                } catch {
+                  /* ignore storage errors */
+                }
+                onSendToSelected(selected);
+              }}
             >
               Broadcast to {selected.length} selected
             </Button>
@@ -337,16 +377,45 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           Step 1: Upload Leads File
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={1.5}>
-          Upload a CSV/XLSX file. Required columns are <strong>Company_Name</strong> and <strong>Website</strong>.
-          Optional columns: Niche, Location, Address, Business_Type.
+          Upload a CSV/XLSX file. Required columns are{" "}
+          <strong>Company_Name</strong> and <strong>Website</strong>. Optional
+          columns: Niche, Location, Address, Business_Type.
         </Typography>
         <Box display="flex" gap={1} flexWrap="wrap" mb={1.5}>
-          <Chip size="small" icon={<Description />} label="Company_Name (required)" />
-          <Chip size="small" icon={<Description />} label="Website (required)" />
-          <Chip size="small" icon={<Description />} label="Niche (optional)" variant="outlined" />
-          <Chip size="small" icon={<Description />} label="Location (optional)" variant="outlined" />
-          <Chip size="small" icon={<Description />} label="Address (optional)" variant="outlined" />
-          <Chip size="small" icon={<Description />} label="Business_Type (optional)" variant="outlined" />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Company_Name (required)"
+          />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Website (required)"
+          />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Niche (optional)"
+            variant="outlined"
+          />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Location (optional)"
+            variant="outlined"
+          />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Address (optional)"
+            variant="outlined"
+          />
+          <Chip
+            size="small"
+            icon={<Description />}
+            label="Business_Type (optional)"
+            variant="outlined"
+          />
         </Box>
         <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
           <Button

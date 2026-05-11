@@ -141,6 +141,7 @@ class EmailLog(Base):
     recipient_email = Column(String(255), nullable=False)
     recipient_name = Column(String(255), nullable=True)
     subject = Column(String(500), nullable=False)
+    body = Column(Text, nullable=True)
     
     status = Column(String(50), default="pending", index=True)
     # Status values: pending, sent, failed, bounced
@@ -151,6 +152,8 @@ class EmailLog(Base):
     # Email open tracking
     tracking_token = Column(String(36), unique=True, index=True, nullable=True)
     opened_at = Column(DateTime, nullable=True)
+    open_count = Column(Integer, default=0, server_default="0")
+    last_open_user_agent = Column(Text, nullable=True)
     clicked_at = Column(DateTime, nullable=True)
     replied_at = Column(DateTime, nullable=True)
     
@@ -186,6 +189,7 @@ class CampaignTemplate(Base):
     subject_template = Column(String(500), nullable=False)
     body_template = Column(Text, nullable=False)
     # Supported placeholders: {{company_name}}, {{owner_name}}, {{address}}, {{niche}}, {{location}}
+    instructions = Column(Text, nullable=True)
     attach_portfolio = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)

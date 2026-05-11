@@ -25,23 +25,23 @@ SETTINGS_SCHEMA = {
         {"key": "MY_COMPANY_VALUE_PROP", "label": "Value Proposition", "type": "text"},
         {"key": "MY_COMPANY_WEBSITE", "label": "Company Website", "type": "text"},
         {"key": "MY_COMPANY_CONTACT", "label": "Contact Email", "type": "text"},
+        {"key": "SENDER_FULL_NAME", "label": "Sender Full Name", "type": "text"},
     ],
     "email": [
-        {"key": "SMTP_FROM_EMAIL", "label": "From Email Address", "type": "text",
-         "hint": "Your outreach sending address — must be on a domain your provider has verified"},
+        {"key": "SMTP_HOST", "label": "SMTP Host", "type": "text"},
+        {"key": "SMTP_PORT", "label": "SMTP Port", "type": "text"},
+        {"key": "SMTP_USER", "label": "SMTP Username", "type": "text"},
+        {"key": "SMTP_PASSWORD", "label": "SMTP Password", "type": "password"},
+        {"key": "SMTP_FROM_EMAIL", "label": "From Email Address", "type": "text"},
         {"key": "SMTP_FROM_NAME", "label": "From Name", "type": "text"},
     ],
-    "ai": [
-        {"key": "ANTHROPIC_API_KEY", "label": "Anthropic API Key", "type": "password"},
-    ],
-    "linkedin": [
-        {"key": "LINKEDIN_CLIENT_ID", "label": "LinkedIn Client ID", "type": "text"},
-        {"key": "LINKEDIN_CLIENT_SECRET", "label": "LinkedIn Client Secret", "type": "password"},
-        {"key": "LINKEDIN_REDIRECT_URI", "label": "LinkedIn Redirect URI", "type": "text"},
-    ],
-    "search": [
-        {"key": "GOOGLE_CSE_API_KEY", "label": "Google CSE API Key", "type": "password"},
-        {"key": "GOOGLE_CSE_CX", "label": "Google CSE CX", "type": "text"},
+    "tracking": [
+        {
+            "key": "TRACKING_BASE_URL",
+            "label": "Tracking Base URL",
+            "type": "text",
+            "hint": "Public URL of your backend, e.g. https://api.myapp.com — required for open tracking to work",
+        },
     ],
 }
 
@@ -70,18 +70,14 @@ def _global_default(key: str) -> str:
         "MY_COMPANY_VALUE_PROP": global_settings.MY_COMPANY_VALUE_PROP,
         "MY_COMPANY_WEBSITE": global_settings.MY_COMPANY_WEBSITE,
         "MY_COMPANY_CONTACT": global_settings.MY_COMPANY_CONTACT,
+        "SENDER_FULL_NAME": global_settings.SENDER_FULL_NAME,
         "SMTP_HOST": global_settings.SMTP_HOST,
         "SMTP_PORT": str(global_settings.SMTP_PORT),
         "SMTP_USER": global_settings.SMTP_USER,
         "SMTP_PASSWORD": global_settings.SMTP_PASSWORD,
         "SMTP_FROM_EMAIL": global_settings.SMTP_FROM_EMAIL,
         "SMTP_FROM_NAME": global_settings.SMTP_FROM_NAME,
-        "ANTHROPIC_API_KEY": global_settings.ANTHROPIC_API_KEY,
-        "LINKEDIN_CLIENT_ID": global_settings.LINKEDIN_CLIENT_ID or "",
-        "LINKEDIN_CLIENT_SECRET": global_settings.LINKEDIN_CLIENT_SECRET or "",
-        "LINKEDIN_REDIRECT_URI": global_settings.LINKEDIN_REDIRECT_URI,
-        "GOOGLE_CSE_API_KEY": global_settings.GOOGLE_CSE_API_KEY or "",
-        "GOOGLE_CSE_CX": global_settings.GOOGLE_CSE_CX or "",
+        "TRACKING_BASE_URL": global_settings.TRACKING_BASE_URL or "",
     }
     return mapping.get(key, "")
 

@@ -254,6 +254,7 @@ export const api = {
     name: string;
     subject_template: string;
     body_template: string;
+    instructions?: string;
     attach_portfolio?: boolean;
   }) => {
     const response = await axiosInstance.post(
@@ -269,6 +270,7 @@ export const api = {
       name: string;
       subject_template: string;
       body_template: string;
+      instructions: string;
       attach_portfolio: boolean;
     }>,
   ) => {
@@ -345,5 +347,93 @@ export const api = {
       { plan },
     );
     return response.data;
+  },
+
+  // AI email generation (broadcast campaign)
+  generateAiEmails: async (payload: {
+    prompt: string;
+    leads: Array<{
+      company_name: string;
+      niche: string;
+      domain: string;
+      location: string;
+      platform: string;
+      decision_maker: string;
+      role: string;
+      linkedin_profile: string;
+      company_linkedin: string;
+      email_pattern: string;
+      recipient_email: string;
+      ai_gap_insight: string;
+      remarks: string;
+      template_name: string;
+      template_subject: string;
+      template_body: string;
+      template_instructions: string;
+    }>;
+  }) => {
+    const response = await axiosInstance.post(
+      "/api/emails/generate-ai",
+      payload,
+    );
+    return response.data as {
+      items: Array<{
+        lead_index: number;
+        recipient_name: string;
+        company_name: string;
+        recipient_email: string;
+        subject: string;
+        body: string;
+        error?: string;
+      }>;
+    };
+  },
+
+  sendAiGeneratedEmails: async (payload: {
+    emails: Array<{
+      lead_index: number;
+      company_id?: number;
+      recipient_name: string;
+      company_name: string;
+      recipient_email: string;
+      subject: string;
+      body: string;
+    }>;
+    attach_portfolio?: boolean;
+  }) => {
+    const response = await axiosInstance.post("/api/emails/send-ai", payload);
+    return response.data as {
+      items: Array<{
+        lead_index: number;
+        success: boolean;
+        error?: string;
+      }>;
+      sent: number;
+      failed: number;
+    };
+  },
+
+  getSentHistory: async (limit = 500) => {
+    const response = await axiosInstance.get("/api/companies/sent-history", {
+      params: { limit },
+    });
+    return response.data as {
+      items: Array<{
+        id: number;
+        name: string;
+        website: string;
+        niche: string | null;
+        location: string | null;
+        recipient_name: string | null;
+        recipient_email: string | null;
+        subject: string | null;
+        body: string | null;
+        sent_at: string | null;
+        opened_at: string | null;
+        open_count: number;
+        last_open_user_agent: string | null;
+      }>;
+      total: number;
+    };
   },
 };

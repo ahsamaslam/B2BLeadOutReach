@@ -42,14 +42,22 @@ def _html_to_plaintext(html_body: str) -> str:
     return "\n".join(line.strip() for line in text.splitlines() if line.strip())
 
 
-def _inject_tracking_pixel(body_html: str, tracking_token: str) -> str:
-    """Append a 1×1 invisible tracking pixel before </body> (or at end)."""
-    base_url = (settings.TRACKING_BASE_URL or settings.MY_COMPANY_WEBSITE).rstrip("/")
-    pixel_url = f"{base_url}/api/tracking/open/{tracking_token}"
+def _inject_tracking_pixel(body_html: str, tracking_token: str, base_url: str = "") -> str:
+    """Append a 1×1 off-screen tracking pixel before </body> (or at end).
+
+    Uses absolute positioning rather than display:none — display:none is a
+    well-known spam signal that many content filters flag.
+    The outer <div> clips overflow so the pixel never affects layout.
+    """
+    if not base_url:
+        return body_html  # No tracking URL configured — skip silently
+    pixel_url = f"{base_url.rstrip('/')}/api/tracking/open/{tracking_token}"
     pixel_tag = (
+        '<div style="overflow:hidden;max-height:0;max-width:0;opacity:0;">'
         f'<img src="{pixel_url}" width="1" height="1" '
-        f'style="display:none!important;border:0;width:1px;height:1px;" '
-        f'alt="" />'
+        f'style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;" '
+        f'alt="" border="0" />'
+        '</div>'
     )
     if "</body>" in body_html.lower():
         return re.sub(r"</body>", pixel_tag + "</body>", body_html, flags=re.IGNORECASE)
@@ -70,6 +78,22 @@ def _add_unsubscribe_footer(body_html: str, to_email: str) -> str:
     return body_html + footer
 
 
+def _ensure_html(text: str) -> str:
+    """Convert plain text to minimal HTML if the content has no HTML tags.
+    Preserves paragraph breaks (blank lines) and single newlines."""
+    stripped = text.strip()
+    # If it already contains HTML tags, trust it as-is
+    if re.search(r"<[a-zA-Z][^>]*>", stripped):
+        return stripped
+    # Wrap each paragraph (separated by blank lines) in <p>, replace single \n with <br>
+    paragraphs = re.split(r"\n{2,}", stripped)
+    html_parts = []
+    for para in paragraphs:
+        inner = para.replace("\n", "<br>")
+        html_parts.append(f"<p>{inner}</p>")
+    return "\n".join(html_parts)
+
+
 def send_email(
     to_email: str,
     to_name: Optional[str],
@@ -78,6 +102,7 @@ def send_email(
     attach_portfolio: bool = False,
     user_id: Optional[int] = None,
     tracking_token: Optional[str] = None,
+    tracking_base_url: Optional[str] = None,
     # Per-tenant FROM overrides — clients set their own name/address in Settings
     smtp_host: Optional[str] = None,
     smtp_port: Optional[int] = None,
@@ -107,10 +132,12 @@ def send_email(
         logger.error("SMTP credentials not configured")
         return {"success": False, "error": "SMTP credentials not configured"}
 
-    # Keep broadcast emails lightweight for better inbox placement.
-    enhanced_html = body_html
+    # Ensure body is proper HTML (plain-text bodies lose all formatting in email clients)
+    enhanced_html = _ensure_html(body_html)
+    enhanced_html = _add_unsubscribe_footer(enhanced_html, to_email)
     if tracking_token:
-        enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token)
+        effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
+        enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
 
     # Build multipart/mixed outer (for attachments)
     outer = MIMEMultipart("mixed")
@@ -120,6 +147,13 @@ def send_email(
     outer["Message-ID"] = make_msgid(domain=from_email.split("@")[-1])
     outer["Date"] = formatdate(localtime=True)
     outer["Reply-To"] = from_email
+    # Deliverability headers — reduce spam score, enable one-click unsubscribe
+    outer["List-Unsubscribe"] = f"<mailto:{from_email}?subject=Unsubscribe>"
+    outer["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    outer["Precedence"] = "bulk"
+    if tracking_token:
+        # Unique reference prevents Gmail from collapsing repeated sends into one thread
+        outer["X-Entity-Ref-ID"] = tracking_token
 
     # multipart/alternative carries HTML + plain-text
     alternative = MIMEMultipart("alternative")

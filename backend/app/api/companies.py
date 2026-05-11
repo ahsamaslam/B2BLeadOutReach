@@ -5,11 +5,12 @@ import pandas as pd
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user, get_current_user_from_token
 from app.database import get_db
-from app.models import Company, Contact, User
+from app.models import Company, Contact, EmailLog, User
 from app.schemas import CompanyCreate, CompanyResponse, CompanyUpdate, BulkUploadResponse
 
 router = APIRouter()
@@ -295,6 +296,71 @@ def export_leads(
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="leads_export.csv"'},
         )
+
+
+# ── /sent-history MUST come before /{company_id} ──────────────────────────────
+
+@router.get("/sent-history")
+def get_sent_history(
+    q: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return companies with status='sent' enriched with latest email log data."""
+    query = db.query(Company).filter(Company.status == "sent")
+
+    if q:
+        pattern = f"%{q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Company.name).like(pattern),
+                func.lower(Company.niche).like(pattern),
+                func.lower(Company.location).like(pattern),
+            )
+        )
+
+    total = query.count()
+    companies = query.order_by(Company.updated_at.desc()).offset(skip).limit(limit).all()
+
+    items = []
+    for company in companies:
+        latest_log = (
+            db.query(EmailLog)
+            .filter(EmailLog.company_id == company.id, EmailLog.status == "sent")
+            .order_by(EmailLog.sent_at.desc())
+            .first()
+        )
+        primary = None
+        for c in company.contacts:
+            if c.role and c.role.upper() in ("CEO", "CTO", "CFO"):
+                primary = c
+                break
+        if primary is None and company.contacts:
+            primary = company.contacts[0]
+
+        items.append({
+            "id": company.id,
+            "name": company.name,
+            "website": company.website,
+            "niche": company.niche,
+            "location": company.location,
+            "recipient_name": (latest_log.recipient_name if latest_log else None) or (primary.name if primary else None),
+            "recipient_email": (latest_log.recipient_email if latest_log else None) or (primary.email if primary else None),
+            "subject": latest_log.subject if latest_log else None,
+            "body": (
+                latest_log.body
+                if latest_log and latest_log.body
+                else (latest_log.template.body if latest_log and latest_log.template else None)
+            ),
+            "sent_at": latest_log.sent_at.isoformat() if latest_log and latest_log.sent_at else None,
+            "opened_at": latest_log.opened_at.isoformat() if latest_log and latest_log.opened_at else None,
+            "open_count": latest_log.open_count if latest_log else 0,
+            "last_open_user_agent": latest_log.last_open_user_agent if latest_log else None,
+        })
+
+    return {"items": items, "total": total}
 
 
 @router.get("/{company_id}", response_model=CompanyResponse)

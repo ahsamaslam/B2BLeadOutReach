@@ -4,16 +4,24 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Container,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Grid,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
-import { CheckCircle } from "@mui/icons-material";
+import { ArrowForward, CheckCircle } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
@@ -42,7 +50,24 @@ interface EmailTemplate {
   status: string;
 }
 
-const Dashboard: React.FC = () => {
+type SentLead = {
+  id: number;
+  name: string;
+  website: string;
+  niche: string | null;
+  location: string | null;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  opened_at: string | null;
+};
+
+interface DashboardProps {
+  onShowHistory?: () => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
   const queryClient = useQueryClient();
   const [emailDialogOpen, setEmailDialogOpen] = React.useState(false);
   const [selectedCompany, setSelectedCompany] = React.useState<Company | null>(
@@ -58,7 +83,11 @@ const Dashboard: React.FC = () => {
     queryKey: ["analytics"],
     queryFn: api.getAnalytics,
   });
-
+  const { data: sentData } = useQuery<{ items: SentLead[]; total: number }>({
+    queryKey: ["sent-history"],
+    queryFn: () => api.getSentHistory(50),
+  });
+  const recentlySent = sentData?.items ?? [];
   const handleApproveEmail = async () => {
     if (!selectedCompany) return;
     await api.updateEmailTemplate(selectedCompany.id, editedEmail);
@@ -184,6 +213,104 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Recently Sent */}
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+      >
+        <Box>
+          <Typography variant="h6" fontWeight="bold">
+            Recently Sent
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Top {Math.min(recentlySent.length, 50)} leads — ordered by sent date
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          size="small"
+          endIcon={<ArrowForward />}
+          onClick={onShowHistory}
+        >
+          Show All ({sentData?.total ?? 0})
+        </Button>
+      </Box>
+
+      <TableContainer component={Paper} sx={{ mb: 4 }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ "& th": { fontWeight: "bold" } }}>
+              <TableCell>Company</TableCell>
+              <TableCell>Recipient</TableCell>
+              <TableCell>Email Address</TableCell>
+              <TableCell>Subject</TableCell>
+              <TableCell>Niche</TableCell>
+              <TableCell>Sent At</TableCell>
+              <TableCell>Opened</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {recentlySent.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} align="center">
+                  <Typography color="text.secondary" py={3}>
+                    No emails sent yet
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            ) : (
+              recentlySent.map((lead) => (
+                <TableRow key={lead.id} hover>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight="medium">
+                      {lead.name}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      {lead.website}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{lead.recipient_name || "—"}</TableCell>
+                  <TableCell>{lead.recipient_email || "—"}</TableCell>
+                  <TableCell
+                    sx={{
+                      maxWidth: 200,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <Typography variant="body2" title={lead.subject ?? ""}>
+                      {lead.subject || "—"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{lead.niche || "—"}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" noWrap>
+                      {lead.sent_at
+                        ? new Date(lead.sent_at).toLocaleString()
+                        : "—"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    {lead.opened_at ? (
+                      <Chip label="Opened" color="success" size="small" />
+                    ) : (
+                      <Chip label="Pending" size="small" variant="outlined" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* Email Review Dialog (triggered from Campaign tab) */}
       <Dialog

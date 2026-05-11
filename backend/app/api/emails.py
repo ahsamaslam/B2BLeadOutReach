@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 from typing import Optional, List
@@ -18,6 +19,7 @@ from app.schemas import (
     CampaignTemplateResponse,
 )
 from app.services import email_service
+from app.config import settings
 
 class SendEmailRequest(BaseModel):
     attach_portfolio: bool = False
@@ -28,26 +30,87 @@ class BulkSendRequest(BaseModel):
     campaign_template_id: int
     attach_portfolio: bool = False
 
+
+class AiEmailLeadItem(BaseModel):
+    company_name: str = ""
+    niche: str = ""
+    domain: str = ""
+    location: str = ""
+    platform: str = ""
+    decision_maker: str = ""
+    role: str = ""
+    linkedin_profile: str = ""
+    company_linkedin: str = ""
+    email_pattern: str = ""
+    recipient_email: str = ""
+    ai_gap_insight: str = ""
+    remarks: str = ""
+    template_name: str = ""
+    template_subject: str = ""
+    template_body: str = ""
+    template_instructions: str = ""
+
+
+class GenerateAiEmailsRequest(BaseModel):
+    prompt: str = ""
+    leads: List[AiEmailLeadItem]
+
+
+class SendAiEmailItem(BaseModel):
+    lead_index: int
+    company_id: Optional[int] = None
+    recipient_name: str = ""
+    company_name: str = ""
+    recipient_email: str
+    subject: str
+    body: str
+
+
+class SendAiEmailsRequest(BaseModel):
+    emails: List[SendAiEmailItem]
+    attach_portfolio: bool = False
+
 router = APIRouter()
 
 
+_ALL_SMTP_KEYS = [
+    "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+    "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SENDER_FULL_NAME", "TRACKING_BASE_URL",
+]
+
+
 def _load_email_creds(user: User, db: Session) -> dict:
-    """Return per-tenant FROM address/name. API key always comes from platform .env."""
-    if not user.tenant_id:
-        return {}
-    rows = (
-        db.query(TenantSettings)
-        .filter(
-            TenantSettings.tenant_id == user.tenant_id,
-            TenantSettings.key.in_(["SMTP_FROM_EMAIL", "SMTP_FROM_NAME"]),
+    """Return all per-tenant SMTP settings, falling back to global .env values."""
+    saved: dict = {}
+    if user.tenant_id:
+        rows = (
+            db.query(TenantSettings)
+            .filter(
+                TenantSettings.tenant_id == user.tenant_id,
+                TenantSettings.key.in_(_ALL_SMTP_KEYS),
+            )
+            .all()
         )
-        .all()
-    )
-    saved = {r.key: r.value for r in rows if r.value}
+        saved = {r.key: r.value for r in rows if r.value}
+
     return {
-        "from_email": saved.get("SMTP_FROM_EMAIL"),
-        "from_name": saved.get("SMTP_FROM_NAME"),
+        # SMTP connection — settings page values take priority over .env
+        "smtp_host": saved.get("SMTP_HOST") or settings.SMTP_HOST,
+        "smtp_port": int(saved.get("SMTP_PORT") or settings.SMTP_PORT),
+        "smtp_user": saved.get("SMTP_USER") or settings.SMTP_USER,
+        "smtp_password": saved.get("SMTP_PASSWORD") or settings.SMTP_PASSWORD,
+        # Sender identity
+        "from_email": saved.get("SMTP_FROM_EMAIL") or settings.SMTP_FROM_EMAIL,
+        "from_name": saved.get("SMTP_FROM_NAME") or settings.SMTP_FROM_NAME,
+        # Non-SMTP extras — stripped before **spreading into send_email()
+        "sender_full_name": saved.get("SENDER_FULL_NAME") or settings.SENDER_FULL_NAME or "",
+        "tracking_base_url": saved.get("TRACKING_BASE_URL") or settings.TRACKING_BASE_URL or "",
     }
+
+
+def _get_sender_full_name(user: User, db: Session) -> str:
+    """Return the configured sender full name for AI prompt injection."""
+    return _load_email_creds(user, db).get("sender_full_name") or ""
 
 
 
@@ -171,6 +234,7 @@ def send_approved_emails(
             recipient_email=recipient,
             recipient_name=primary_contact.name if primary_contact else None,
             subject=template.subject,
+            body=template.body,
             status=status,
             sent_at=datetime.utcnow() if result["success"] else None,
             tracking_token=tracking_token if result["success"] else None,
@@ -355,6 +419,7 @@ async def send_bulk_emails(
             recipient_email=recipient_email,
             recipient_name=owner_name or None,
             subject=subject,
+            body=body,
             status=status,
             sent_at=datetime.utcnow() if result["success"] else None,
             error_message=result.get("error") if not result["success"] else None,
@@ -376,3 +441,167 @@ async def send_bulk_emails(
         "failed": failed,
         "errors": errors,
     }
+
+
+# ─────────────────────────────────────────────
+# AI-powered email generation
+# ─────────────────────────────────────────────
+
+@router.post("/generate-ai")
+def generate_ai_emails(
+    payload: GenerateAiEmailsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Use Anthropic Claude to generate personalised emails for each lead."""
+    from anthropic import Anthropic
+
+    if not settings.ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY is not configured")
+
+    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    sender_name = _get_sender_full_name(current_user, db)
+    items = []
+
+    for idx, lead in enumerate(payload.leads):
+        instructions_block = (
+            f"\n\nAdditional instructions from the sender:\n{lead.template_instructions.strip()}"
+            if lead.template_instructions and lead.template_instructions.strip()
+            else ""
+        )
+        sender_block = (
+            f" After the closing (e.g. 'Regards,' or 'Best,'), sign with the sender's full name: {sender_name}."
+            if sender_name
+            else ""
+        )
+        system_prompt = (
+            "You are an expert B2B outreach copywriter. "
+            "Write a single personalised cold email for the lead below. "
+            "Use the template as a structural and stylistic guide, but tailor every sentence specifically to the recipient's company and context. "
+            "Return a JSON object with exactly two keys: \"subject\" and \"body\". "
+            "The \"body\" value MUST be valid HTML — use <p> tags for paragraphs, <br> for line breaks, <strong> for bold text. "
+            "Do NOT use plain newlines for line breaks. Do NOT wrap the HTML in <html> or <body> tags. No markdown, no extra text outside the JSON."
+            + sender_block
+            + instructions_block
+        )
+        user_prompt = f"""Template name: {lead.template_name}
+Subject template: {lead.template_subject}
+Body template:
+{lead.template_body}
+
+Lead details:
+- Company: {lead.company_name}
+- Niche: {lead.niche}
+- Domain: {lead.domain}
+- Location: {lead.location}
+- Platform: {lead.platform}
+- Decision maker: {lead.decision_maker} ({lead.role})
+- LinkedIn: {lead.linkedin_profile}
+- AI gap insight: {lead.ai_gap_insight}
+- Remarks: {lead.remarks}
+- Recipient email: {lead.recipient_email}
+- Sender name: {sender_name}"""
+
+        try:
+            message = client.messages.create(
+                model=settings.ANTHROPIC_MODEL,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            raw = message.content[0].text.strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            data = json.loads(raw)
+            items.append({
+                "lead_index": idx,
+                "recipient_name": lead.decision_maker,
+                "company_name": lead.company_name,
+                "recipient_email": lead.recipient_email,
+                "subject": data.get("subject", ""),
+                "body": data.get("body", ""),
+            })
+        except Exception as exc:
+            items.append({
+                "lead_index": idx,
+                "recipient_name": lead.decision_maker,
+                "company_name": lead.company_name,
+                "recipient_email": lead.recipient_email,
+                "subject": "",
+                "body": "",
+                "error": str(exc),
+            })
+
+    return {"items": items}
+
+
+# ─────────────────────────────────────────────
+# Send AI-generated emails
+# ─────────────────────────────────────────────
+
+@router.post("/send-ai")
+async def send_ai_emails(
+    payload: SendAiEmailsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send emails that were AI-generated and approved by the user."""
+    sent = 0
+    failed = 0
+    items = []
+
+    creds = _load_email_creds(current_user, db)
+    # Strip keys that don't belong in send_email() signature
+    _EXTRA_KEYS = {"sender_full_name", "tracking_base_url"}
+    send_creds = {k: v for k, v in creds.items() if k not in _EXTRA_KEYS}
+    tracking_base_url = creds.get("tracking_base_url") or ""
+
+    for email in payload.emails:
+        if not email.recipient_email:
+            failed += 1
+            items.append({"lead_index": email.lead_index, "success": False, "error": "No recipient email"})
+            continue
+
+        tracking_token = str(uuid.uuid4())
+        result = email_service.send_email(
+            to_email=email.recipient_email,
+            to_name=email.recipient_name or None,
+            subject=email.subject,
+            body_html=email.body,
+            attach_portfolio=payload.attach_portfolio,
+            user_id=current_user.id,
+            tracking_token=tracking_token,
+            tracking_base_url=tracking_base_url,
+            **send_creds,
+        )
+
+        if result["success"]:
+            sent += 1
+            # Update company status so it moves to History
+            if email.company_id:
+                company_obj = db.query(Company).filter(Company.id == email.company_id).first()
+                if company_obj:
+                    company_obj.status = "sent"
+            log = EmailLog(
+                company_id=email.company_id,
+                recipient_email=email.recipient_email,
+                recipient_name=email.recipient_name or None,
+                subject=email.subject,
+                body=email.body,
+                status="sent",
+                sent_at=datetime.utcnow(),
+                tracking_token=tracking_token,
+            )
+            db.add(log)
+            items.append({"lead_index": email.lead_index, "success": True})
+        else:
+            failed += 1
+            items.append({
+                "lead_index": email.lead_index,
+                "success": False,
+                "error": result.get("error", "Send failed"),
+            })
+
+    db.commit()
+    return {"items": items, "sent": sent, "failed": failed}

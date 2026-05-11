@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     MY_COMPANY_PORTFOLIO: str = "- AI chatbot\n- workflow automation"
     MY_COMPANY_WEBSITE: str = "https://example.com"
     MY_COMPANY_CONTACT: str = "contact@example.com"
+    SENDER_FULL_NAME: str = ""
+    TRACKING_BASE_URL: Optional[str] = None
     
     # LinkedIn OAuth2 (optional)
     LINKEDIN_CLIENT_ID: Optional[str] = None

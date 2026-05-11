@@ -201,6 +201,7 @@ class CampaignTemplateBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     subject_template: str = Field(..., min_length=1, max_length=500)
     body_template: str = Field(..., min_length=1)
+    instructions: Optional[str] = None
     attach_portfolio: bool = False
 
 class CampaignTemplateCreate(CampaignTemplateBase):
@@ -210,6 +211,7 @@ class CampaignTemplateUpdate(BaseModel):
     name: Optional[str] = None
     subject_template: Optional[str] = None
     body_template: Optional[str] = None
+    instructions: Optional[str] = None
     attach_portfolio: Optional[bool] = None
 
 class CampaignTemplateResponse(CampaignTemplateBase):

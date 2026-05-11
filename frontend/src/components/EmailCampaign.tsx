@@ -1,14 +1,16 @@
-import React, { useLayoutEffect, useMemo, useState } from "react";
+﻿import React, { useLayoutEffect, useMemo, useState } from "react";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Box,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
   Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -17,9 +19,6 @@ import {
   Radio,
   RadioGroup,
   Select,
-  Step,
-  StepLabel,
-  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -29,7 +28,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { ExpandMore, Send } from "@mui/icons-material";
+import { Send, Visibility } from "@mui/icons-material";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -46,6 +45,7 @@ type CampaignTemplate = {
   name: string;
   subject_template: string;
   body_template: string;
+  instructions: string | null;
   attach_portfolio: boolean;
 };
 
@@ -63,82 +63,17 @@ type LeadRow = {
   emailPattern: string;
   aiGapInsight: string;
   remarks: string;
-  /** When set (e.g. from Upload Leads broadcast payload), used for email preview. */
   ownerEmail?: string;
 };
 
 type GeneratedEmail = {
-  leadIndex: number;
+  leadId: number;
   recipientName: string;
   companyName: string;
   recipientEmail: string;
   subject: string;
   body: string;
-  approved: boolean;
   error?: string;
-};
-
-const STEPS = [
-  "Select Leads & Templates",
-  "Review & Approve",
-  "Broadcast & Send",
-];
-
-const TABLE_COLUMNS = [
-  "Company Name",
-  "Niche",
-  "Domain",
-  "Location",
-  "Platform",
-  "Decision Maker",
-  "Role",
-  "Email",
-  "AI Gap Insight",
-  "Remarks",
-] as const;
-
-const BROADCAST_COLUMN_WIDTHS: Record<(typeof TABLE_COLUMNS)[number], string> = {
-  "Company Name": "13%",
-  Niche: "9%",
-  Domain: "10%",
-  Location: "10%",
-  Platform: "9%",
-  "Decision Maker": "13%",
-  Role: "7%",
-  Email: "14%",
-  "AI Gap Insight": "10%",
-  Remarks: "5%",
-};
-
-const compactCellSx = {
-  py: 0.75,
-  px: 1,
-  maxWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  verticalAlign: "middle",
-};
-
-const headerCellSx = {
-  ...compactCellSx,
-  bgcolor: "grey.100",
-  color: "text.primary",
-  fontWeight: 700,
-  fontSize: "0.72rem",
-  letterSpacing: "0.02em",
-  textTransform: "uppercase",
-  borderBottom: "1px solid",
-  borderColor: "divider",
-};
-
-const checkboxCellSx = {
-  py: 0.5,
-  px: 0.5,
-  width: 42,
-  maxWidth: 42,
-  textAlign: "center",
-  verticalAlign: "middle",
 };
 
 const resolveEmailPreview = (lead: LeadRow): string => {
@@ -151,14 +86,21 @@ const resolveEmailPreview = (lead: LeadRow): string => {
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "");
   if (pattern.includes("@")) return pattern;
-  const parts = lead.decisionMaker.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const parts = lead.decisionMaker
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
   const first = parts[0] ?? "";
   const last = parts[parts.length - 1] ?? "";
   if (!domain || !first) return "";
-  if (pattern.includes("first.last") && last) return `${first}.${last}@${domain}`;
-  if (pattern.includes("first_last") && last) return `${first}_${last}@${domain}`;
+  if (pattern.includes("first.last") && last)
+    return `${first}.${last}@${domain}`;
+  if (pattern.includes("first_last") && last)
+    return `${first}_${last}@${domain}`;
   if (pattern.includes("firstlast") && last) return `${first}${last}@${domain}`;
-  if (pattern.includes("f.last") && last) return `${first.slice(0, 1)}.${last}@${domain}`;
+  if (pattern.includes("f.last") && last)
+    return `${first.slice(0, 1)}.${last}@${domain}`;
   return `${first}${last ? `.${last}` : ""}@${domain}`;
 };
 
@@ -182,18 +124,20 @@ function broadcastPayloadToLeadRow(p: BroadcastLeadPayload): LeadRow {
 }
 
 export interface EmailCampaignProps {
-  /** Called after a broadcast send request completes successfully (clears parent state). */
   onBroadcastComplete?: () => void;
+  initialSelectedIds?: number[];
 }
 
 const EmailCampaign: React.FC<EmailCampaignProps> = ({
   onBroadcastComplete,
+  initialSelectedIds,
 }) => {
   const location = useLocation();
-  const [activeStep, setActiveStep] = useState(0);
+
   const [leads, setLeads] = useState<LeadRow[]>([]);
-  const [selectedLeadIds, setSelectedLeadIds] = useState<number[]>([]);
-  const prompt = "";
+  const [selectedLeadIds, setSelectedLeadIds] = useState<number[]>(
+    initialSelectedIds ?? [],
+  );
   const [templateSelectionMode, setTemplateSelectionMode] = useState<
     "single" | "custom"
   >("single");
@@ -203,17 +147,16 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
     Record<number, number>
   >({});
   const [generatedEmails, setGeneratedEmails] = useState<GeneratedEmail[]>([]);
+  const [sentLeadIds, setSentLeadIds] = useState<Set<number>>(new Set());
   const [attachPortfolio, setAttachPortfolio] = useState(false);
+  const [reviewLeadId, setReviewLeadId] = useState<number | null>(null);
 
+  // â”€â”€ Hydrate from storage when switching to this tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useLayoutEffect(() => {
     const st = location.state as Partial<BroadcastLocationState> | null;
     let payloads: BroadcastLeadPayload[] | null = null;
     if (Array.isArray(st?.broadcastLeads) && st.broadcastLeads.length > 0) {
       payloads = st.broadcastLeads;
-      console.log(
-        "[EmailCampaign] hydrate from router state, length:",
-        payloads.length,
-      );
       try {
         localStorage.removeItem(BROADCAST_LEADS_STORAGE_KEY);
       } catch {
@@ -221,30 +164,17 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
       }
     } else {
       payloads = consumeBroadcastLeadsFromStorage();
-      console.log("[EmailCampaign] consumeBroadcastLeadsFromStorage:", payloads);
     }
-    if (!payloads?.length) {
-      console.log("[EmailCampaign] no broadcast payloads");
-      return;
-    }
+    if (!payloads?.length) return;
     const rows = payloads.map(broadcastPayloadToLeadRow);
-    console.log("[EmailCampaign] mapped LeadRows:", rows);
     setLeads(rows);
     setSelectedLeadIds(rows.map((r) => r.id));
-    setLeadTemplateAssignments({});
     setGeneratedEmails([]);
-    setActiveStep(0);
+    setSentLeadIds(new Set());
     toast.success(`Loaded ${rows.length} lead(s) for broadcast`);
   }, [location.key]);
 
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: api.getSettings,
-    enabled: !!authStorage.getToken(),
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
-
+  // â”€â”€ Queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data: campaignTemplates = [] } = useQuery<CampaignTemplate[]>({
     queryKey: ["campaignTemplates"],
     queryFn: api.getCampaignTemplates,
@@ -253,83 +183,61 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
     staleTime: 5 * 60 * 1000,
   });
 
-  const checkedLeads = useMemo(
-    () => leads.filter((lead) => selectedLeadIds.includes(lead.id)),
-    [leads, selectedLeadIds],
+  // â”€â”€ Derived state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const emailByLeadId = useMemo(
+    () => new Map(generatedEmails.map((e) => [e.leadId, e])),
+    [generatedEmails],
   );
-
-  const selectedLeads = useMemo(
-    () => {
-      if (templateSelectionMode === "custom") {
-        const assignedIds = new Set(
-          Object.keys(leadTemplateAssignments).map((id) => Number(id)),
-        );
-        if (bulkTemplateId) {
-          selectedLeadIds.forEach((leadId) => assignedIds.add(leadId));
-        }
-        return leads.filter((lead) => assignedIds.has(lead.id));
-      }
-      return checkedLeads;
-    },
-    [
-      bulkTemplateId,
-      checkedLeads,
-      leadTemplateAssignments,
-      leads,
-      selectedLeadIds,
-      templateSelectionMode,
-    ],
-  );
-
-  const activeTemplates = useMemo(() => {
-    if (templateSelectionMode === "single") {
-      const id = Number(selectedTemplateId);
-      return campaignTemplates.filter((template) => template.id === id);
-    }
-    if (templateSelectionMode === "custom") {
-      const ids = new Set(Object.values(leadTemplateAssignments));
-      return campaignTemplates.filter((template) => ids.has(template.id));
-    }
-    return [];
-  }, [
-    campaignTemplates,
-    leadTemplateAssignments,
-    selectedTemplateId,
-    templateSelectionMode,
-  ]);
 
   const templateById = useMemo(
-    () => new Map(campaignTemplates.map((template) => [template.id, template])),
+    () => new Map(campaignTemplates.map((t) => [t.id, t])),
     [campaignTemplates],
   );
 
-  const selectableLeadIds = useMemo(
-    () =>
-      leads
-        .filter((l) => !!resolveEmailPreview(l))
-        .map((l) => l.id),
-    [leads],
+  const selectedLeads = useMemo(
+    () => leads.filter((l) => selectedLeadIds.includes(l.id)),
+    [leads, selectedLeadIds],
   );
 
-  const approvedEmails = generatedEmails.filter((e) => e.approved);
+  const getAssignedTemplate = (
+    leadId: number,
+  ): CampaignTemplate | undefined => {
+    if (templateSelectionMode === "single") {
+      return templateById.get(Number(selectedTemplateId));
+    }
+    const tid = leadTemplateAssignments[leadId] || Number(bulkTemplateId);
+    return templateById.get(tid);
+  };
 
-  const canGenerateEmails =
+  const canGenerate =
     selectedLeads.length > 0 &&
     (templateSelectionMode === "single"
       ? !!selectedTemplateId
       : selectedLeads.every(
-          (lead) => !!leadTemplateAssignments[lead.id] || !!bulkTemplateId,
+          (l) => !!leadTemplateAssignments[l.id] || !!bulkTemplateId,
         ));
 
+  const readyToSend = useMemo(
+    () =>
+      selectedLeads.filter((l) => {
+        if (sentLeadIds.has(l.id)) return false;
+        const em = emailByLeadId.get(l.id);
+        return !!em && !em.error;
+      }),
+    [selectedLeads, emailByLeadId, sentLeadIds],
+  );
+
+  const reviewEmail =
+    reviewLeadId !== null ? (emailByLeadId.get(reviewLeadId) ?? null) : null;
+
+  // â”€â”€ Mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const generateMutation = useMutation({
     mutationFn: async () => {
+      const snapshot = leads.filter((l) => selectedLeadIds.includes(l.id));
       const response = await api.generateAiEmails({
-        prompt,
-        leads: selectedLeads.map((l) => {
-          const assignedTemplate =
-            templateSelectionMode === "custom"
-              ? templateById.get(leadTemplateAssignments[l.id] || Number(bulkTemplateId))
-              : activeTemplates[0];
+        prompt: "",
+        leads: snapshot.map((l) => {
+          const tpl = getAssignedTemplate(l.id);
           return {
             company_name: l.companyName,
             niche: l.niche,
@@ -344,29 +252,40 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
             recipient_email: resolveEmailPreview(l),
             ai_gap_insight: l.aiGapInsight,
             remarks: l.remarks,
-            template_name: assignedTemplate?.name ?? "",
-            template_subject: assignedTemplate?.subject_template ?? "",
-            template_body: assignedTemplate?.body_template ?? "",
+            template_name: tpl?.name ?? "",
+            template_subject: tpl?.subject_template ?? "",
+            template_body: tpl?.body_template ?? "",
+            template_instructions: tpl?.instructions ?? "",
           };
         }),
       });
-      return response.items;
+      return { items: response.items, snapshot };
     },
-    onSuccess: (items) => {
-      setGeneratedEmails(
-        items.map((item) => ({
-          leadIndex: item.lead_index,
+    onSuccess: ({ items, snapshot }: any) => {
+      const newEmails: GeneratedEmail[] = items.map((item: any) => {
+        const lead = snapshot[item.lead_index];
+        return {
+          leadId: lead?.id ?? -1,
           recipientName: item.recipient_name,
           companyName: item.company_name,
           recipientEmail: item.recipient_email,
           subject: item.subject,
           body: item.body,
-          approved: false,
           error: item.error,
-        })),
-      );
-      setActiveStep(1);
-      toast.success("AI emails generated");
+        };
+      });
+      setGeneratedEmails((prev) => {
+        const map = new Map(prev.map((e) => [e.leadId, e]));
+        newEmails.forEach((e: GeneratedEmail) => map.set(e.leadId, e));
+        return Array.from(map.values());
+      });
+      const ok = newEmails.filter((e: GeneratedEmail) => !e.error).length;
+      const fail = newEmails.filter((e: GeneratedEmail) => !!e.error).length;
+      if (fail > 0) {
+        toast.error(`Generated ${ok}, failed ${fail}`);
+      } else {
+        toast.success(`Generated ${ok} email(s) â€” click Review to inspect`);
+      }
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Failed to generate emails");
@@ -374,35 +293,38 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
   });
 
   const sendMutation = useMutation({
-    mutationFn: () =>
-      api.sendAiGeneratedEmails({
-        emails: approvedEmails.map((e) => ({
-          lead_index: e.leadIndex,
-          recipient_name: e.recipientName,
-          company_name: e.companyName,
-          recipient_email: e.recipientEmail,
-          subject: e.subject,
-          body: e.body,
-        })),
-        attach_portfolio: attachPortfolio,
-      }),
-    onSuccess: (result) => {
-      setGeneratedEmails((prev) =>
-        prev.map((item) => {
-          const status = result.items.find((x) => x.lead_index === item.leadIndex);
-          if (!status) return item;
+    mutationFn: async () => {
+      const snapshot = [...readyToSend];
+      const result = await api.sendAiGeneratedEmails({
+        emails: snapshot.map((l, idx) => {
+          const em = emailByLeadId.get(l.id)!;
           return {
-            ...item,
-            error: status.success ? undefined : status.error || "Send failed",
+            lead_index: idx,
+            company_id: l.id,
+            recipient_name: em.recipientName,
+            company_name: em.companyName,
+            recipient_email: em.recipientEmail,
+            subject: em.subject,
+            body: em.body,
           };
         }),
-      );
+        attach_portfolio: attachPortfolio,
+      });
+      return { result, snapshot };
+    },
+    onSuccess: ({ result, snapshot }: any) => {
+      setSentLeadIds((prev) => {
+        const next = new Set(prev);
+        result.items.forEach((item: any) => {
+          if (item.success) {
+            const lead = snapshot[item.lead_index];
+            if (lead) next.add(lead.id);
+          }
+        });
+        return next;
+      });
       if (result.failed > 0) {
-        if (result.sent > 0) {
-          toast.error(`Broadcast partial: ${result.sent} sent, ${result.failed} failed`);
-        } else {
-          toast.error(`Broadcast failed: ${result.failed} email(s) not sent`);
-        }
+        toast.error(`${result.sent} sent, ${result.failed} failed`);
       } else {
         toast.success(`Broadcast completed: ${result.sent} sent`);
         onBroadcastComplete?.();
@@ -413,10 +335,19 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
     },
   });
 
+  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const toggleLead = (id: number) => {
     setSelectedLeadIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  };
+
+  const toggleAll = () => {
+    if (selectedLeadIds.length === leads.length) {
+      setSelectedLeadIds([]);
+    } else {
+      setSelectedLeadIds(leads.map((l) => l.id));
+    }
   };
 
   const setTemplateForLead = (leadId: number, templateId: string) => {
@@ -433,11 +364,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
 
   const assignBulkTemplate = () => {
     if (!bulkTemplateId) {
-      toast.error("Select a template to assign");
-      return;
-    }
-    if (selectedLeadIds.length === 0) {
-      toast.error("Select at least one lead to assign");
+      toast.error("Select a template first");
       return;
     }
     const id = Number(bulkTemplateId);
@@ -448,83 +375,381 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
       });
       return next;
     });
-    toast.success(`Assigned template to ${selectedLeadIds.length} selected lead(s)`);
+    toast.success(`Assigned template to ${selectedLeadIds.length} lead(s)`);
   };
 
-  const updateGeneratedEmail = (
-    leadIndex: number,
-    patch: Partial<GeneratedEmail>,
-  ) => {
+  const updateEmail = (leadId: number, patch: Partial<GeneratedEmail>) => {
     setGeneratedEmails((prev) =>
-      prev.map((item) =>
-        item.leadIndex === leadIndex ? { ...item, ...patch } : item,
-      ),
+      prev.map((e) => (e.leadId === leadId ? { ...e, ...patch } : e)),
     );
   };
 
+  const getStatusChip = (lead: LeadRow) => {
+    if (sentLeadIds.has(lead.id))
+      return <Chip label="Sent" color="success" size="small" />;
+    if (generateMutation.isPending && selectedLeadIds.includes(lead.id))
+      return (
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <CircularProgress size={11} />
+          <Typography variant="caption" color="text.secondary">
+            Generatingâ€¦
+          </Typography>
+        </Box>
+      );
+    const em = emailByLeadId.get(lead.id);
+    if (!em) return <Chip label="Pending" size="small" variant="outlined" />;
+    if (em.error) return <Chip label="Error" color="error" size="small" />;
+    return <Chip label="Generated" color="primary" size="small" />;
+  };
+
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <Container maxWidth="xl" sx={{ mt: 3, mb: 5 }}>
       <Typography variant="h5" fontWeight="bold" gutterBottom>
         Broadcast Emails
       </Typography>
-      <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
-        {STEPS.map((label) => (
-          <Step key={label}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
 
-      {selectedLeads.length > 0 && activeStep >= 1 && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-            Selected recipients ({selectedLeads.length})
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Same leads you chose when uploading/selecting recipients — visible until you send on the final step.
+      {/* Template Config */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+          Template Configuration
+        </Typography>
+        <FormControl component="fieldset" sx={{ mb: 1.5 }}>
+          <FormLabel component="legend" sx={{ fontSize: "0.82rem" }}>
+            Mode
+          </FormLabel>
+          <RadioGroup
+            row
+            value={templateSelectionMode}
+            onChange={(e) =>
+              setTemplateSelectionMode(e.target.value as "single" | "custom")
+            }
+          >
+            <FormControlLabel
+              value="single"
+              control={<Radio size="small" />}
+              label="Same template for all leads"
+            />
+            <FormControlLabel
+              value="custom"
+              control={<Radio size="small" />}
+              label="Per-lead template assignment"
+            />
+          </RadioGroup>
+        </FormControl>
+
+        {campaignTemplates.length === 0 ? (
+          <Alert severity="info" sx={{ maxWidth: 480 }}>
+            No campaign templates yet â€” create one in the Templates tab first.
+          </Alert>
+        ) : templateSelectionMode === "single" ? (
+          <FormControl size="small" sx={{ minWidth: 320 }}>
+            <Select
+              displayEmpty
+              value={selectedTemplateId}
+              onChange={(e) => setSelectedTemplateId(String(e.target.value))}
+            >
+              <MenuItem value="">Select a template</MenuItem>
+              {campaignTemplates.map((t) => (
+                <MenuItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : (
+          <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+            <FormControl size="small" sx={{ minWidth: 260 }}>
+              <Select
+                displayEmpty
+                value={bulkTemplateId}
+                onChange={(e) => setBulkTemplateId(String(e.target.value))}
+              >
+                <MenuItem value="">Select template to assign</MenuItem>
+                {campaignTemplates.map((t) => (
+                  <MenuItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={assignBulkTemplate}
+              disabled={selectedLeadIds.length === 0}
+            >
+              Assign to {selectedLeadIds.length} checked
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => setLeadTemplateAssignments({})}
+            >
+              Clear
+            </Button>
+          </Box>
+        )}
+      </Paper>
+
+      {/* Action Bar */}
+      <Box
+        display="flex"
+        alignItems="center"
+        gap={1.5}
+        flexWrap="wrap"
+        mb={1.5}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {selectedLeadIds.length} of {leads.length} selected
+        </Typography>
+        <Button size="small" onClick={toggleAll} disabled={leads.length === 0}>
+          {selectedLeadIds.length === leads.length
+            ? "Deselect All"
+            : "Select All"}
+        </Button>
+        <Box flex={1} />
+        <FormControlLabel
+          control={
+            <Checkbox
+              size="small"
+              checked={attachPortfolio}
+              onChange={(e) => setAttachPortfolio(e.target.checked)}
+            />
+          }
+          label={
+            <Typography variant="body2">Attach portfolio files</Typography>
+          }
+        />
+        <Button
+          variant="outlined"
+          disabled={!canGenerate || generateMutation.isPending}
+          onClick={() => generateMutation.mutate()}
+          startIcon={
+            generateMutation.isPending ? (
+              <CircularProgress size={16} />
+            ) : undefined
+          }
+        >
+          {generateMutation.isPending
+            ? "Generatingâ€¦"
+            : `Generate Emails (${selectedLeadIds.length})`}
+        </Button>
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={
+            sendMutation.isPending ? <CircularProgress size={16} /> : <Send />
+          }
+          disabled={readyToSend.length === 0 || sendMutation.isPending}
+          onClick={() => sendMutation.mutate()}
+        >
+          {sendMutation.isPending
+            ? "Sendingâ€¦"
+            : `Send Selected (${readyToSend.length})`}
+        </Button>
+      </Box>
+
+      {/* Leads Table */}
+      <Paper variant="outlined">
+        <TableContainer sx={{ maxHeight: 560 }}>
+          <Table
+            stickyHeader
+            size="small"
+            sx={{ tableLayout: "fixed", width: "100%" }}
+          >
+            <TableHead>
+              <TableRow>
+                <TableCell
+                  padding="checkbox"
+                  sx={{ width: 42, bgcolor: "grey.100" }}
+                >
+                  <Checkbox
+                    size="small"
+                    indeterminate={
+                      selectedLeadIds.length > 0 &&
+                      selectedLeadIds.length < leads.length
+                    }
+                    checked={
+                      leads.length > 0 &&
+                      selectedLeadIds.length === leads.length
+                    }
+                    onChange={toggleAll}
+                  />
+                </TableCell>
+                {(
+                  [
+                    ["Company", "19%"],
+                    ["Decision Maker", "14%"],
+                    ["Role", "9%"],
+                    ["Niche", "9%"],
+                    ["Location", "10%"],
+                    ["Email", "16%"],
+                    ["Status", "11%"],
+                    ["Action", "10%"],
+                  ] as [string, string][]
+                ).map(([label, width]) => (
+                  <TableCell
+                    key={label}
+                    sx={{
+                      bgcolor: "grey.100",
+                      fontWeight: 700,
+                      fontSize: "0.72rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.02em",
+                      width,
+                    }}
+                  >
+                    {label}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {leads.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                    <Typography color="text.secondary">
+                      Go to <strong>Upload Leads</strong>, select rows, and
+                      click <strong>Broadcast to selected</strong>.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                leads.map((lead) => {
+                  const isSelected = selectedLeadIds.includes(lead.id);
+                  const em = emailByLeadId.get(lead.id);
+                  const hasEmail = !!em && !em.error;
+                  const isSent = sentLeadIds.has(lead.id);
+                  const cellSx = {
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 0,
+                    fontSize: "0.78rem",
+                    py: 0.75,
+                    px: 1,
+                  };
+                  return (
+                    <TableRow
+                      key={lead.id}
+                      hover
+                      selected={isSelected}
+                      onClick={() => toggleLead(lead.id)}
+                      sx={{
+                        cursor: "pointer",
+                        height: 44,
+                        opacity: isSent ? 0.6 : 1,
+                        "&.Mui-selected": { bgcolor: "primary.50" },
+                        "&.Mui-selected:hover": { bgcolor: "primary.100" },
+                      }}
+                    >
+                      <TableCell
+                        padding="checkbox"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          size="small"
+                          checked={isSelected}
+                          onChange={() => toggleLead(lead.id)}
+                        />
+                      </TableCell>
+                      <TableCell sx={cellSx}>{lead.companyName}</TableCell>
+                      <TableCell sx={cellSx}>
+                        {lead.decisionMaker || "â€”"}
+                      </TableCell>
+                      <TableCell sx={cellSx}>{lead.role || "â€”"}</TableCell>
+                      <TableCell sx={cellSx}>{lead.niche || "â€”"}</TableCell>
+                      <TableCell sx={cellSx}>
+                        {lead.location || "â€”"}
+                      </TableCell>
+                      <TableCell sx={cellSx}>
+                        {resolveEmailPreview(lead) || "â€”"}
+                      </TableCell>
+                      <TableCell sx={{ py: 0.5, px: 1 }}>
+                        {getStatusChip(lead)}
+                      </TableCell>
+                      <TableCell
+                        sx={{ py: 0.5, px: 1 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {hasEmail && !isSent && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<Visibility />}
+                            onClick={() => setReviewLeadId(lead.id)}
+                            sx={{ fontSize: "0.7rem", py: 0.25 }}
+                          >
+                            Review
+                          </Button>
+                        )}
+                        {em?.error && (
+                          <Typography
+                            variant="caption"
+                            color="error"
+                            title={em.error}
+                            sx={{
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              maxWidth: 90,
+                            }}
+                          >
+                            {em.error}
+                          </Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {/* Per-lead template assignment panel (custom mode) */}
+      {templateSelectionMode === "custom" && selectedLeads.length > 0 && (
+        <Paper variant="outlined" sx={{ mt: 2, p: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Per-lead template assignments ({selectedLeads.length} selected)
           </Typography>
           <TableContainer sx={{ maxHeight: 260 }}>
-            <Table size="small" stickyHeader>
+            <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Company</TableCell>
-                  <TableCell>Decision maker</TableCell>
-                  <TableCell>Role</TableCell>
-                  <TableCell>Email (preview)</TableCell>
-                  {templateSelectionMode === "custom" && <TableCell>Template</TableCell>}
+                  <TableCell>Template</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {selectedLeads.map((lead) => (
                   <TableRow key={lead.id}>
                     <TableCell>{lead.companyName}</TableCell>
-                    <TableCell>{lead.decisionMaker || "—"}</TableCell>
-                    <TableCell>{lead.role || "—"}</TableCell>
-                    <TableCell>{resolveEmailPreview(lead) || "—"}</TableCell>
-                    {templateSelectionMode === "custom" && (
-                      <TableCell sx={{ minWidth: 220 }}>
-                        <FormControl fullWidth size="small">
-                          <Select
-                            displayEmpty
-                            value={
-                              leadTemplateAssignments[lead.id]
-                                ? String(leadTemplateAssignments[lead.id])
-                                : ""
-                            }
-                            onChange={(event) =>
-                              setTemplateForLead(lead.id, String(event.target.value))
-                            }
-                          >
-                            <MenuItem value="">No template</MenuItem>
-                            {campaignTemplates.map((template) => (
-                              <MenuItem key={template.id} value={String(template.id)}>
-                                {template.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </TableCell>
-                    )}
+                    <TableCell sx={{ minWidth: 220 }}>
+                      <FormControl fullWidth size="small">
+                        <Select
+                          displayEmpty
+                          value={
+                            leadTemplateAssignments[lead.id]
+                              ? String(leadTemplateAssignments[lead.id])
+                              : bulkTemplateId
+                          }
+                          onChange={(e) =>
+                            setTemplateForLead(lead.id, String(e.target.value))
+                          }
+                        >
+                          <MenuItem value="">No template</MenuItem>
+                          {campaignTemplates.map((t) => (
+                            <MenuItem key={t.id} value={String(t.id)}>
+                              {t.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -533,410 +758,58 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
         </Paper>
       )}
 
-      {activeStep === 0 && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          {!settings?.values?.ANTHROPIC_API_KEY && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              AI API key is not configured. Go to <strong>Settings</strong> and save your
-              Anthropic API key once, then return here.
-            </Alert>
-          )}
-          {leads.length > 0 && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Click rows below like Gmail to select one, all, or some leads. Then
-              assign templates to the selected group and generate emails.
-            </Alert>
-          )}
-          <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: "grey.50" }}>
-            <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-              Template Selection
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Use one template for everyone, or select a group of rows below and
-              assign a template to that selected group.
-            </Typography>
-            <FormControl component="fieldset" sx={{ mb: 2 }}>
-              <FormLabel component="legend">Selection Mode</FormLabel>
-              <RadioGroup
-                row
-                value={templateSelectionMode}
-                onChange={(event) =>
-                  setTemplateSelectionMode(event.target.value as "single" | "custom")
-                }
+      {/* Review Email Dialog */}
+      <Dialog
+        open={reviewEmail !== null}
+        onClose={() => setReviewLeadId(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        {reviewEmail && (
+          <>
+            <DialogTitle sx={{ pb: 0.5 }}>
+              Review Email â€” {reviewEmail.companyName}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
               >
-                <FormControlLabel
-                  value="single"
-                  control={<Radio size="small" />}
-                  label="Single Template for All Leads"
-                />
-                <FormControlLabel
-                  value="custom"
-                  control={<Radio size="small" />}
-                  label="Select Leads and Assign Templates"
-                />
-              </RadioGroup>
-            </FormControl>
-
-            {campaignTemplates.length === 0 ? (
-              <Alert severity="info">No campaign templates found.</Alert>
-            ) : templateSelectionMode === "single" ? (
-              <FormControl fullWidth size="small">
-                <Select
-                  displayEmpty
-                  value={selectedTemplateId}
-                  onChange={(event) => setSelectedTemplateId(String(event.target.value))}
-                >
-                  <MenuItem value="">Select template for all selected leads</MenuItem>
-                  {campaignTemplates.map((template) => (
-                    <MenuItem key={template.id} value={String(template.id)}>
-                      {template.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <Box>
-                <Box
-                  display="flex"
-                  gap={1}
-                  flexWrap="wrap"
-                  alignItems="center"
-                  sx={{ mb: 1 }}
-                >
-                  <FormControl size="small" sx={{ minWidth: 260, flex: "1 1 260px" }}>
-                    <Select
-                      displayEmpty
-                      value={bulkTemplateId}
-                      onChange={(event) => setBulkTemplateId(String(event.target.value))}
-                    >
-                      <MenuItem value="">Select template for checked rows</MenuItem>
-                      {campaignTemplates.map((template) => (
-                        <MenuItem key={template.id} value={String(template.id)}>
-                          {template.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <Button
-                    variant="contained"
-                    onClick={assignBulkTemplate}
-                    disabled={selectedLeadIds.length === 0}
-                  >
-                    Assign to {selectedLeadIds.length} Checked
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => setLeadTemplateAssignments({})}
-                    disabled={Object.keys(leadTemplateAssignments).length === 0}
-                  >
-                    Clear Assignments
-                  </Button>
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  After assigning a template to one group, select another group in
-                  the table and assign a different template.
-                </Typography>
-              </Box>
-            )}
-          </Paper>
-          <Box display="flex" justifyContent="flex-end" alignItems="center" mb={2}>
-            <Box display="flex" gap={1}>
-              <Button onClick={() => setSelectedLeadIds(selectableLeadIds)}>
-                Select All With Email
-              </Button>
-              <Button onClick={() => setSelectedLeadIds([])}>Clear</Button>
-            </Box>
-          </Box>
-
-          <Typography variant="body2" color="text.secondary" mb={1}>
-            {templateSelectionMode === "custom"
-              ? `${selectedLeadIds.length} checked, ${selectedLeads.length} ready for broadcast`
-              : `${selectedLeadIds.length} selected`}
-          </Typography>
-
-          <TableContainer sx={{ maxHeight: 480, overflowX: "hidden", width: "100%" }}>
-            <Table
-              stickyHeader
-              size="small"
-              sx={{
-                tableLayout: "fixed",
-                width: "100%",
-                "& .MuiTableCell-root": {
-                  fontSize: "0.75rem",
-                  lineHeight: 1.35,
-                },
-              }}
-            >
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox" sx={{ ...checkboxCellSx, bgcolor: "grey.100" }} />
-                  {TABLE_COLUMNS.map((c) => (
-                    <TableCell
-                      key={c}
-                      title={c}
-                      align="left"
-                      sx={{ width: BROADCAST_COLUMN_WIDTHS[c], ...headerCellSx }}
-                    >
-                      {c}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {leads.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={TABLE_COLUMNS.length + 1}
-                      align="center"
-                      sx={{ py: 4 }}
-                    >
-                      <Typography color="text.secondary">
-                        Go to <strong>Upload Leads</strong>, select rows, and click{" "}
-                        <strong>Broadcast to selected</strong>.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  leads.map((lead) => {
-                    const isSelected = selectedLeadIds.includes(lead.id);
-                    const cells: Record<(typeof TABLE_COLUMNS)[number], string> = {
-                      "Company Name": lead.companyName,
-                      Niche: lead.niche,
-                      Domain: lead.domain,
-                      Location: lead.location,
-                      Platform: lead.platform,
-                      "Decision Maker": lead.decisionMaker,
-                      Role: lead.role,
-                      Email: resolveEmailPreview(lead),
-                      "AI Gap Insight": lead.aiGapInsight,
-                      Remarks: lead.remarks,
-                    };
-                    return (
-                    <TableRow
-                      key={lead.id}
-                      hover
-                      selected={isSelected}
-                      onClick={() => toggleLead(lead.id)}
-                      sx={{
-                        height: 42,
-                        cursor: "pointer",
-                        transition: "background-color 120ms ease",
-                        "&:hover": {
-                          bgcolor: "action.hover",
-                        },
-                        "&.Mui-selected": {
-                          bgcolor: "primary.50",
-                        },
-                        "&.Mui-selected:hover": {
-                          bgcolor: "primary.100",
-                        },
-                      }}
-                    >
-                      <TableCell padding="checkbox" sx={checkboxCellSx}>
-                        <Checkbox
-                          size="small"
-                          checked={isSelected}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() => toggleLead(lead.id)}
-                          inputProps={{ "aria-label": `Select ${lead.companyName || "lead"}` }}
-                          sx={{
-                            p: 0.25,
-                            verticalAlign: "middle",
-                          }}
-                        />
-                      </TableCell>
-                      {TABLE_COLUMNS.map((column) => (
-                        <TableCell
-                          key={column}
-                          title={cells[column] || ""}
-                          sx={{ width: BROADCAST_COLUMN_WIDTHS[column], ...compactCellSx }}
-                        >
-                          {cells[column]}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box mt={2} display="flex" justifyContent="flex-end">
-            <Button
-              variant="contained"
-              disabled={!canGenerateEmails || generateMutation.isPending}
-              onClick={() => generateMutation.mutate()}
-              startIcon={
-                generateMutation.isPending ? <CircularProgress size={16} /> : undefined
-              }
-            >
-              {generateMutation.isPending ? "Generating..." : "Generate Emails"}
-            </Button>
-          </Box>
-        </Paper>
-      )}
-
-      {activeStep === 1 && (
-        <Box>
-          {generatedEmails.map((email) => (
-            <Accordion key={email.leadIndex} defaultExpanded>
-              <AccordionSummary expandIcon={<ExpandMore />}>
-                <Box>
-                  <Typography variant="subtitle2">
-                    {email.recipientName || "Unknown"} · {email.companyName}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {email.recipientEmail || "No recipient email"}
-                  </Typography>
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                {email.error && <Alert severity="warning" sx={{ mb: 2 }}>{email.error}</Alert>}
-                <TextField
-                  fullWidth
-                  label="Subject Line"
-                  value={email.subject}
-                  onChange={(e) =>
-                    updateGeneratedEmail(email.leadIndex, { subject: e.target.value })
-                  }
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={6}
-                  label="Email Body"
-                  value={email.body}
-                  onChange={(e) =>
-                    updateGeneratedEmail(email.leadIndex, { body: e.target.value })
-                  }
-                  sx={{ mb: 2 }}
-                />
-                <Button
-                  variant={email.approved ? "contained" : "outlined"}
-                  onClick={() =>
-                    updateGeneratedEmail(email.leadIndex, { approved: !email.approved })
-                  }
-                  disabled={!email.subject || !email.body || !email.recipientEmail}
-                >
-                  {email.approved ? "Approved" : "Approve"}
-                </Button>
-              </AccordionDetails>
-            </Accordion>
-          ))}
-
-          <Paper sx={{ p: 2, mb: 2, bgcolor: "info.50", borderColor: "info.200", border: "1px solid" }}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={attachPortfolio}
-                  onChange={(e) => setAttachPortfolio(e.target.checked)}
-                />
-              }
-              label="Attach portfolio files to emails"
-            />
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ ml: 4, mt: 0.5 }}>
-              Include any uploaded portfolio files (PDF, DOCX, etc.) with each email
-            </Typography>
-          </Paper>
-
-          <Box mt={2} display="flex" justifyContent="space-between">
-            <Button onClick={() => setActiveStep(0)}>Back</Button>
-            <Box display="flex" gap={1}>
-              <Button
-                onClick={() =>
-                  setGeneratedEmails((prev) =>
-                    prev.map((e) => ({
-                      ...e,
-                      approved: !!e.subject && !!e.body && !!e.recipientEmail,
-                    })),
-                  )
-                }
-              >
-                Approve All
-              </Button>
-              <Button
-                variant="contained"
-                onClick={() => setActiveStep(2)}
-                disabled={approvedEmails.length === 0}
-              >
-                Next
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-      )}
-
-      {activeStep === 2 && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Approved Emails ({approvedEmails.length})
-          </Typography>
-          {approvedEmails.map((email) => (
-            <Box key={email.leadIndex} mb={2} p={2} border="1px solid" borderColor="divider">
-              <Typography variant="body2" fontWeight={600}>
-                {email.recipientName || "Unknown"} · {email.companyName}
+                To: {reviewEmail.recipientName || "â€”"} &lt;
+                {reviewEmail.recipientEmail}&gt;
               </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                {email.recipientEmail}
-              </Typography>
+            </DialogTitle>
+            <DialogContent dividers>
+              {reviewEmail.error && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  {reviewEmail.error}
+                </Alert>
+              )}
               <TextField
                 fullWidth
-                size="small"
                 label="Subject"
-                value={email.subject}
+                value={reviewEmail.subject}
                 onChange={(e) =>
-                  updateGeneratedEmail(email.leadIndex, { subject: e.target.value })
+                  updateEmail(reviewEmail.leadId, { subject: e.target.value })
                 }
-                sx={{ mb: 1 }}
+                sx={{ mb: 2 }}
               />
               <TextField
                 fullWidth
                 multiline
-                minRows={4}
-                label="Body"
-                value={email.body}
+                minRows={10}
+                label="Email Body"
+                value={reviewEmail.body}
                 onChange={(e) =>
-                  updateGeneratedEmail(email.leadIndex, { body: e.target.value })
+                  updateEmail(reviewEmail.leadId, { body: e.target.value })
                 }
               />
-              {email.error && <Alert severity="error" sx={{ mt: 1 }}>{email.error}</Alert>}
-            </Box>
-          ))}
-
-          <Paper sx={{ p: 2, mb: 2, bgcolor: "info.50", borderColor: "info.200", border: "1px solid" }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Email Settings
-            </Typography>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={attachPortfolio}
-                  onChange={(e) => setAttachPortfolio(e.target.checked)}
-                />
-              }
-              label="Attach portfolio files to emails"
-            />
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ ml: 4 }}>
-              Include any uploaded portfolio files (PDF, DOCX, etc.) with each email
-            </Typography>
-          </Paper>
-
-          <Box mt={2} display="flex" justifyContent="space-between">
-            <Button onClick={() => setActiveStep(1)}>Back</Button>
-            <Button
-              variant="contained"
-              color="success"
-              startIcon={sendMutation.isPending ? <CircularProgress size={16} /> : <Send />}
-              onClick={() => sendMutation.mutate()}
-              disabled={approvedEmails.length === 0 || sendMutation.isPending}
-            >
-              {sendMutation.isPending ? "Sending..." : "Send All"}
-            </Button>
-          </Box>
-        </Paper>
-      )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setReviewLeadId(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Container>
   );
 };
