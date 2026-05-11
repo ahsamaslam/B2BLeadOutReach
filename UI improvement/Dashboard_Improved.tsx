@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import {
   Box,
   Button,
@@ -16,21 +16,46 @@ import {
   TableHead,
   TableRow,
   Typography,
-  alpha,
   useTheme,
+  alpha,
 } from "@mui/material";
 import {
   ArrowForward,
-  CheckCircle,
   TrendingUp,
   TrendingDown,
   Email,
+  CheckCircle,
   Error as ErrorIcon,
   Drafts,
   Send,
 } from "@mui/icons-material";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { api } from "../services/api";
+
+interface Company {
+  id: number;
+  name: string;
+  website: string;
+  status: string;
+  contacts: Contact[];
+}
+
+interface Contact {
+  id: number;
+  role: string;
+  name: string;
+  email: string;
+  linkedin_url?: string;
+}
+
+interface EmailTemplate {
+  id: number;
+  company_id: number;
+  subject: string;
+  body: string;
+  status: string;
+}
 
 type SentLead = {
   id: number;
@@ -49,6 +74,7 @@ interface DashboardProps {
   onShowHistory?: () => void;
 }
 
+// Stat Card Component with better visual hierarchy
 const StatCard: React.FC<{
   title: string;
   value: string | number;
@@ -57,17 +83,9 @@ const StatCard: React.FC<{
   color?: string;
   subtitle?: string;
   emphasized?: boolean;
-}> = ({
-  title,
-  value,
-  icon,
-  trend,
-  color = "#1976d2",
-  subtitle,
-  emphasized = false,
-}) => {
+}> = ({ title, value, icon, trend, color = "#1976d2", subtitle, emphasized = false }) => {
   const theme = useTheme();
-
+  
   return (
     <Card
       sx={{
@@ -83,6 +101,7 @@ const StatCard: React.FC<{
         },
       }}
     >
+      {/* Background decoration */}
       <Box
         sx={{
           position: "absolute",
@@ -94,13 +113,11 @@ const StatCard: React.FC<{
           bgcolor: alpha(color, 0.05),
         }}
       />
+      
       <CardContent sx={{ position: "relative", height: "100%" }}>
         <Stack spacing={2}>
-          <Box
-            display="flex"
-            justifyContent="space-between"
-            alignItems="flex-start"
-          >
+          {/* Header with icon */}
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start">
             <Typography
               variant="body2"
               color="text.secondary"
@@ -126,6 +143,7 @@ const StatCard: React.FC<{
             </Box>
           </Box>
 
+          {/* Main value */}
           <Box>
             <Typography
               variant="h3"
@@ -149,6 +167,7 @@ const StatCard: React.FC<{
             )}
           </Box>
 
+          {/* Trend indicator */}
           {trend && (
             <Box display="flex" alignItems="center" gap={0.5}>
               {trend.isPositive ? (
@@ -177,7 +196,9 @@ const StatCard: React.FC<{
 
 const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
   const theme = useTheme();
+  const queryClient = useQueryClient();
 
+  // Fetch analytics
   const { data: analytics } = useQuery({
     queryKey: ["analytics"],
     queryFn: api.getAnalytics,
@@ -188,6 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
   });
   const recentlySent = sentData?.items ?? [];
 
+  // Calculate derived metrics
   const totalEnriched =
     (analytics?.companies_by_status?.data_parsed || 0) +
     (analytics?.companies_by_status?.drafted || 0) +
@@ -197,6 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
   return (
     <Box sx={{ bgcolor: "grey.50", minHeight: "100vh", py: 4 }}>
       <Container maxWidth="xl">
+        {/* Header */}
         <Box mb={4}>
           <Typography
             variant="h4"
@@ -217,6 +240,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
           </Typography>
         </Box>
 
+        {/* Primary Metrics - Emphasized */}
         <Grid container spacing={3} mb={3}>
           <Grid item xs={12} sm={6} md={3}>
             <StatCard
@@ -258,6 +282,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
           </Grid>
         </Grid>
 
+        {/* Secondary Metrics - Normal cards */}
         <Grid container spacing={2} mb={4}>
           <Grid item xs={12} sm={6} md={3}>
             <StatCard
@@ -293,6 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
           </Grid>
         </Grid>
 
+        {/* Recently Sent Section */}
         <Paper
           elevation={0}
           sx={{
@@ -302,6 +328,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
             borderColor: "divider",
           }}
         >
+          {/* Section Header */}
           <Box
             sx={{
               p: 3,
@@ -329,13 +356,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                 variant="outlined"
                 endIcon={<ArrowForward />}
                 onClick={onShowHistory}
-                sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: "none",
+                  fontWeight: 600,
+                }}
               >
                 View All ({sentData?.total ?? 0})
               </Button>
             </Box>
           </Box>
 
+          {/* Table */}
           <TableContainer sx={{ bgcolor: "white" }}>
             <Table>
               <TableHead>
@@ -364,17 +396,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                   <TableRow>
                     <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                       <Box>
-                        <Email
-                          sx={{ fontSize: 48, color: "text.disabled", mb: 2 }}
-                        />
+                        <Email sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
                         <Typography color="text.secondary" fontWeight={500}>
                           No emails sent yet
                         </Typography>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          mt={1}
-                        >
+                        <Typography variant="body2" color="text.secondary" mt={1}>
                           Start a campaign to see your sent emails here
                         </Typography>
                       </Box>
@@ -386,9 +412,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                       key={lead.id}
                       hover
                       sx={{
-                        "&:hover": {
-                          bgcolor: alpha(theme.palette.primary.main, 0.02),
-                        },
+                        "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.02) },
                         "& td": { py: 2 },
                       }}
                     >
@@ -434,21 +458,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          noWrap
-                        >
+                        <Typography variant="body2" color="text.secondary" noWrap>
                           {lead.sent_at
-                            ? new Date(lead.sent_at).toLocaleDateString(
-                                "en-US",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )
+                            ? new Date(lead.sent_at).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
                             : "—"}
                         </Typography>
                       </TableCell>
@@ -469,7 +486,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                             label="Sent"
                             size="small"
                             variant="outlined"
-                            sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+                            sx={{
+                              fontWeight: 600,
+                              fontSize: "0.75rem",
+                            }}
                           />
                         )}
                       </TableCell>

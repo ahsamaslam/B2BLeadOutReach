@@ -1,5 +1,6 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -11,6 +12,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Grid,
   IconButton,
   TextField,
@@ -124,7 +126,11 @@ const CampaignTemplates: React.FC = () => {
   };
 
   const handleSave = () => {
-    if (!form.name.trim() || !form.subject_template.trim() || !form.body_template.trim()) {
+    if (
+      !form.name.trim() ||
+      !form.subject_template.trim() ||
+      !form.body_template.trim()
+    ) {
       toast.error("Name, subject and body are required");
       return;
     }
@@ -141,8 +147,13 @@ const CampaignTemplates: React.FC = () => {
 
   if (isLoading)
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <Typography color="text.secondary">Loading templates...</Typography>
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="60vh"
+      >
+        <Typography color="text.secondary">Loading templates…</Typography>
       </Box>
     );
 
@@ -151,7 +162,13 @@ const CampaignTemplates: React.FC = () => {
       <Container maxWidth="xl">
         {/* Header */}
         <Box mb={4}>
-          <Box display="flex" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2}>
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="flex-start"
+            flexWrap="wrap"
+            gap={2}
+          >
             <Box>
               <Typography
                 variant="h4"
@@ -167,7 +184,8 @@ const CampaignTemplates: React.FC = () => {
                 Campaign Templates
               </Typography>
               <Typography variant="body1" color="text.secondary" maxWidth={600}>
-                Create reusable email templates. AI will personalize each one when sending to your leads.
+                Create reusable email templates. AI will personalize each one when
+                sending to your leads.
               </Typography>
             </Box>
             <Button
@@ -182,7 +200,9 @@ const CampaignTemplates: React.FC = () => {
                 px: 3,
                 py: 1.5,
                 boxShadow: theme.shadows[4],
-                "&:hover": { boxShadow: theme.shadows[8] },
+                "&:hover": {
+                  boxShadow: theme.shadows[8],
+                },
               }}
             >
               New Template
@@ -203,9 +223,12 @@ const CampaignTemplates: React.FC = () => {
             }}
           >
             <Email sx={{ fontSize: 64, color: "text.disabled", mb: 2 }} />
-            <Typography variant="h6" fontWeight={600} gutterBottom>No templates yet</Typography>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              No templates yet
+            </Typography>
             <Typography color="text.secondary" mb={3}>
-              Create your first campaign template to start sending personalized outreach emails
+              Create your first campaign template to start sending personalized
+              outreach emails
             </Typography>
             <Button
               variant="contained"
@@ -238,11 +261,13 @@ const CampaignTemplates: React.FC = () => {
                     transform: "translateY(-4px)",
                     boxShadow: theme.shadows[8],
                     borderColor: "primary.main",
-                    "& .action-buttons": { opacity: 1 },
+                    "& .action-buttons": {
+                      opacity: 1,
+                    },
                   },
                 }}
               >
-                {/* Gradient top bar */}
+                {/* Decorative gradient */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -255,6 +280,7 @@ const CampaignTemplates: React.FC = () => {
                 />
 
                 <CardContent sx={{ flex: 1, pt: 3 }}>
+                  {/* Template Name */}
                   <Typography
                     variant="h6"
                     fontWeight={700}
@@ -283,7 +309,13 @@ const CampaignTemplates: React.FC = () => {
                   >
                     <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                       <Email sx={{ fontSize: 16, color: "primary.main" }} />
-                      <Typography variant="caption" fontWeight={700} color="primary.main" textTransform="uppercase" letterSpacing={0.5}>
+                      <Typography
+                        variant="caption"
+                        fontWeight={700}
+                        color="primary.main"
+                        textTransform="uppercase"
+                        letterSpacing={0.5}
+                      >
                         Subject
                       </Typography>
                     </Box>
@@ -291,7 +323,12 @@ const CampaignTemplates: React.FC = () => {
                       variant="body2"
                       color="text.primary"
                       fontWeight={500}
-                      sx={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                      sx={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
                     >
                       {tmpl.subject_template}
                     </Typography>
@@ -299,7 +336,15 @@ const CampaignTemplates: React.FC = () => {
 
                   {/* Body Preview */}
                   <Box mb={2}>
-                    <Typography variant="caption" fontWeight={700} color="text.secondary" textTransform="uppercase" letterSpacing={0.5} display="block" mb={1}>
+                    <Typography
+                      variant="caption"
+                      fontWeight={700}
+                      color="text.secondary"
+                      textTransform="uppercase"
+                      letterSpacing={0.5}
+                      display="block"
+                      mb={1}
+                    >
                       Email Body
                     </Typography>
                     <Typography
@@ -332,14 +377,26 @@ const CampaignTemplates: React.FC = () => {
                     >
                       <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                         <SmartToy sx={{ fontSize: 16, color: "success.main" }} />
-                        <Typography variant="caption" fontWeight={700} color="success.main" textTransform="uppercase" letterSpacing={0.5}>
+                        <Typography
+                          variant="caption"
+                          fontWeight={700}
+                          color="success.main"
+                          textTransform="uppercase"
+                          letterSpacing={0.5}
+                        >
                           AI Instructions
                         </Typography>
                       </Box>
                       <Typography
                         variant="body2"
                         color="text.secondary"
-                        sx={{ fontSize: "0.85rem", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                        sx={{
+                          fontSize: "0.85rem",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
                       >
                         {tmpl.instructions}
                       </Typography>
@@ -347,6 +404,7 @@ const CampaignTemplates: React.FC = () => {
                   )}
                 </CardContent>
 
+                {/* Action Buttons */}
                 <CardActions
                   className="action-buttons"
                   sx={{
@@ -361,7 +419,12 @@ const CampaignTemplates: React.FC = () => {
                     <IconButton
                       size="small"
                       onClick={() => handleOpen(tmpl)}
-                      sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.16) } }}
+                      sx={{
+                        bgcolor: alpha(theme.palette.primary.main, 0.08),
+                        "&:hover": {
+                          bgcolor: alpha(theme.palette.primary.main, 0.16),
+                        },
+                      }}
                     >
                       <Edit fontSize="small" color="primary" />
                     </IconButton>
@@ -374,7 +437,12 @@ const CampaignTemplates: React.FC = () => {
                           deleteMutation.mutate(tmpl.id);
                         }
                       }}
-                      sx={{ bgcolor: alpha(theme.palette.error.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.16) } }}
+                      sx={{
+                        bgcolor: alpha(theme.palette.error.main, 0.08),
+                        "&:hover": {
+                          bgcolor: alpha(theme.palette.error.main, 0.16),
+                        },
+                      }}
                     >
                       <Delete fontSize="small" color="error" />
                     </IconButton>
@@ -386,39 +454,75 @@ const CampaignTemplates: React.FC = () => {
         </Grid>
 
         {/* Create / Edit Dialog */}
-        <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
-          <DialogTitle sx={{ pb: 2, borderBottom: "1px solid", borderColor: "divider" }}>
+        <Dialog
+          open={dialogOpen}
+          onClose={handleClose}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
             <Typography variant="h6" fontWeight={700}>
               {editTarget ? "Edit Template" : "New Campaign Template"}
             </Typography>
             <Typography variant="body2" color="text.secondary" mt={0.5}>
-              {editTarget ? "Update your email template" : "Create a reusable email template for your campaigns"}
+              {editTarget
+                ? "Update your email template"
+                : "Create a reusable email template for your campaigns"}
             </Typography>
           </DialogTitle>
 
           <DialogContent sx={{ pt: 3 }}>
             <Box display="flex" flexDirection="column" gap={3}>
+              {/* Template Name */}
               <TextField
                 fullWidth
                 label="Template Name"
                 placeholder="e.g. AI Automation Outreach — UK Law Firms"
                 value={form.name}
                 onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
+                }}
               />
 
+              {/* Subject Template */}
               <TextField
                 fullWidth
                 label="Subject Template"
                 placeholder="e.g. AI automation for {{company_name}}"
                 value={form.subject_template}
-                onChange={(e) => setForm((p) => ({ ...p, subject_template: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, subject_template: e.target.value }))
+                }
                 helperText="Placeholders will be filled per lead during sending"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
+                }}
               />
 
+              {/* Placeholder Inserter */}
               <Box>
-                <Typography variant="body2" fontWeight={600} color="text.secondary" mb={1.5}>
+                <Typography
+                  variant="body2"
+                  fontWeight={600}
+                  color="text.secondary"
+                  mb={1.5}
+                >
                   Quick Insert Placeholders:
                 </Typography>
                 <Box display="flex" gap={1} flexWrap="wrap">
@@ -434,13 +538,16 @@ const CampaignTemplates: React.FC = () => {
                         borderRadius: 2,
                         fontWeight: 600,
                         fontSize: "0.8rem",
-                        "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.12) },
+                        "&:hover": {
+                          bgcolor: alpha(theme.palette.primary.main, 0.12),
+                        },
                       }}
                     />
                   ))}
                 </Box>
               </Box>
 
+              {/* Body Template */}
               <TextField
                 fullWidth
                 multiline
@@ -448,11 +555,20 @@ const CampaignTemplates: React.FC = () => {
                 label="Email Body Template"
                 placeholder={`Hi {{owner_name}},\n\nI came across {{company_name}} and noticed...`}
                 value={form.body_template}
-                onChange={(e) => setForm((p) => ({ ...p, body_template: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, body_template: e.target.value }))
+                }
                 helperText="AI will use this as a style guide and personalize it with each company's data"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontFamily: "monospace", fontSize: "0.9rem" } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    fontFamily: "monospace",
+                    fontSize: "0.9rem",
+                  },
+                }}
               />
 
+              {/* AI Instructions */}
               <TextField
                 fullWidth
                 multiline
@@ -460,22 +576,36 @@ const CampaignTemplates: React.FC = () => {
                 label="AI Instructions (Optional)"
                 placeholder={`e.g. Keep the tone professional and concise. Focus on cost-saving benefits. Always end with a specific call-to-action.`}
                 value={form.instructions}
-                onChange={(e) => setForm((p) => ({ ...p, instructions: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, instructions: e.target.value }))
+                }
                 helperText="Guide the AI on tone, focus areas, structure, or things to avoid"
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
+                }}
               />
             </Box>
           </DialogContent>
 
           <DialogActions sx={{ p: 3, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
-            <Button onClick={handleClose} sx={{ textTransform: "none", fontWeight: 600 }}>
+            <Button
+              onClick={handleClose}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
               Cancel
             </Button>
             <Button
               variant="contained"
               onClick={handleSave}
               disabled={createMutation.isPending || updateMutation.isPending}
-              sx={{ textTransform: "none", fontWeight: 600, px: 3, borderRadius: 2 }}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                px: 3,
+                borderRadius: 2,
+              }}
             >
               {editTarget ? "Save Changes" : "Create Template"}
             </Button>

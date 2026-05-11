@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, HttpUrl, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
 
@@ -6,7 +6,7 @@ from datetime import datetime
 
 class CompanyBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    website: HttpUrl
+    website: str
 
 class CompanyCreate(CompanyBase):
     niche: Optional[str] = None
@@ -15,7 +15,7 @@ class CompanyCreate(CompanyBase):
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
-    website: Optional[HttpUrl] = None
+    website: Optional[str] = None
     status: Optional[str] = None
     company_info: Optional[str] = None
     projects: Optional[str] = None
