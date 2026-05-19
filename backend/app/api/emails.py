@@ -122,6 +122,21 @@ def _assert_email_sending_configured(creds: dict) -> None:
         )
 
 
+def _is_first_touch(db: Session, company_id: Optional[int], recipient_email: Optional[str]) -> bool:
+    """Return True when we have no previously sent emails for this target."""
+    query = db.query(EmailLog.id).filter(EmailLog.status == "sent")
+
+    if company_id:
+        query = query.filter(EmailLog.company_id == company_id)
+    elif recipient_email:
+        query = query.filter(EmailLog.recipient_email == recipient_email)
+    else:
+        # If we cannot identify the target, choose safer first-touch mode.
+        return True
+
+    return query.first() is None
+
+
 
 def _resolve_template(db: Session, template_or_company_id: int) -> EmailTemplate | None:
     template = db.query(EmailTemplate).filter(EmailTemplate.id == template_or_company_id).first()
@@ -228,6 +243,11 @@ def send_approved_emails(
             continue
 
         tracking_token = str(uuid.uuid4())
+        deliverability_mode = settings.DELIVERABILITY_MODE_ENABLED and _is_first_touch(
+            db,
+            company.id,
+            recipient,
+        )
         result = email_service.send_email(
             to_email=recipient,
             to_name=primary_contact.name if primary_contact else None,
@@ -236,6 +256,7 @@ def send_approved_emails(
             attach_portfolio=payload.attach_portfolio,
             user_id=current_user.id,
             tracking_token=tracking_token,
+            deliverability_mode=deliverability_mode,
             **creds,
         )
 
@@ -423,6 +444,11 @@ async def send_bulk_emails(
         body = _substitute(tmpl.body_template)
 
         tracking_token = str(uuid.uuid4())
+        deliverability_mode = settings.DELIVERABILITY_MODE_ENABLED and _is_first_touch(
+            db,
+            company.id,
+            recipient_email,
+        )
         result = email_service.send_email(
             to_email=recipient_email,
             to_name=owner_name or None,
@@ -431,6 +457,7 @@ async def send_bulk_emails(
             attach_portfolio=payload.attach_portfolio or tmpl.attach_portfolio,
             user_id=current_user.id,
             tracking_token=tracking_token,
+            deliverability_mode=deliverability_mode,
             **creds,
         )
 
@@ -593,6 +620,11 @@ async def send_ai_emails(
             continue
 
         tracking_token = str(uuid.uuid4())
+        deliverability_mode = settings.DELIVERABILITY_MODE_ENABLED and _is_first_touch(
+            db,
+            email.company_id,
+            email.recipient_email,
+        )
         result = email_service.send_email(
             to_email=email.recipient_email,
             to_name=email.recipient_name or None,
@@ -602,6 +634,7 @@ async def send_ai_emails(
             user_id=current_user.id,
             tracking_token=tracking_token,
             tracking_base_url=tracking_base_url,
+            deliverability_mode=deliverability_mode,
             **send_creds,
         )
 

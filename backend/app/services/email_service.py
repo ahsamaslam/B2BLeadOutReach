@@ -103,6 +103,7 @@ def send_email(
     user_id: Optional[int] = None,
     tracking_token: Optional[str] = None,
     tracking_base_url: Optional[str] = None,
+    deliverability_mode: bool = False,
     # Per-tenant FROM overrides — clients set their own name/address in Settings
     smtp_host: Optional[str] = None,
     smtp_port: Optional[int] = None,
@@ -133,37 +134,61 @@ def send_email(
         logger.error("SMTP credentials not configured")
         return {"success": False, "error": "SMTP credentials not configured"}
 
-    # Ensure body is proper HTML (plain-text bodies lose all formatting in email clients)
-    enhanced_html = _ensure_html(body_html)
-    enhanced_html = _add_unsubscribe_footer(enhanced_html, to_email)
-    if tracking_token:
-        effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
-        enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
+    message = None
 
-    # Build multipart/mixed outer (for attachments)
-    outer = MIMEMultipart("mixed")
-    outer["From"] = f"{from_name} <{from_email}>" if from_name else from_email
-    outer["To"] = f"{to_name} <{to_email}>" if to_name else to_email
-    outer["Subject"] = subject
-    outer["Message-ID"] = make_msgid(domain=from_email.split("@")[-1])
-    outer["Date"] = formatdate(localtime=True)
-    outer["Reply-To"] = from_email
-    # Deliverability headers — reduce spam score, enable one-click unsubscribe
-    outer["List-Unsubscribe"] = f"<mailto:{from_email}?subject=Unsubscribe>"
-    outer["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    # X-Priority 3 = Normal (not bulk/low) — avoids spam routing
-    outer["X-Priority"] = "3"
-    outer["X-MSMail-Priority"] = "Normal"
-    if tracking_token:
-        # Unique reference prevents Gmail from collapsing repeated sends into one thread
-        outer["X-Entity-Ref-ID"] = tracking_token
+    if deliverability_mode:
+        # First-touch outreach should be plain, low-friction, and tracking-free.
+        plain_text = _html_to_plaintext(body_html)
+        plain_text = (
+            plain_text
+            + "\n\n--\n"
+            + "If you do not want to receive more emails, reply with 'Unsubscribe'."
+        )
+        if attach_portfolio:
+            # Keep body plain text, but use multipart/mixed so attachments can be included.
+            message = MIMEMultipart("mixed")
+            message.attach(MIMEText(plain_text, "plain", "utf-8"))
+        else:
+            message = MIMEText(plain_text, "plain", "utf-8")
+        message["From"] = f"{from_name} <{from_email}>" if from_name else from_email
+        message["To"] = f"{to_name} <{to_email}>" if to_name else to_email
+        message["Subject"] = subject
+        message["Message-ID"] = make_msgid(domain=from_email.split("@")[-1])
+        message["Date"] = formatdate(localtime=True)
+        message["Reply-To"] = from_email
+    else:
+        # Ensure body is proper HTML (plain-text bodies lose all formatting in email clients)
+        enhanced_html = _ensure_html(body_html)
+        enhanced_html = _add_unsubscribe_footer(enhanced_html, to_email)
+        if tracking_token:
+            effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
+            enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
 
-    # multipart/alternative carries HTML + plain-text
-    alternative = MIMEMultipart("alternative")
-    plain_text = _html_to_plaintext(enhanced_html)
-    alternative.attach(MIMEText(plain_text, "plain", "utf-8"))
-    alternative.attach(MIMEText(enhanced_html, "html", "utf-8"))
-    outer.attach(alternative)
+        # Build multipart/mixed outer (for attachments)
+        outer = MIMEMultipart("mixed")
+        outer["From"] = f"{from_name} <{from_email}>" if from_name else from_email
+        outer["To"] = f"{to_name} <{to_email}>" if to_name else to_email
+        outer["Subject"] = subject
+        outer["Message-ID"] = make_msgid(domain=from_email.split("@")[-1])
+        outer["Date"] = formatdate(localtime=True)
+        outer["Reply-To"] = from_email
+        # Deliverability headers — reduce spam score, enable one-click unsubscribe
+        outer["List-Unsubscribe"] = f"<mailto:{from_email}?subject=Unsubscribe>"
+        outer["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+        # X-Priority 3 = Normal (not bulk/low) — avoids spam routing
+        outer["X-Priority"] = "3"
+        outer["X-MSMail-Priority"] = "Normal"
+        if tracking_token:
+            # Unique reference prevents Gmail from collapsing repeated sends into one thread
+            outer["X-Entity-Ref-ID"] = tracking_token
+
+        # multipart/alternative carries HTML + plain-text
+        alternative = MIMEMultipart("alternative")
+        plain_text = _html_to_plaintext(enhanced_html)
+        alternative.attach(MIMEText(plain_text, "plain", "utf-8"))
+        alternative.attach(MIMEText(enhanced_html, "html", "utf-8"))
+        outer.attach(alternative)
+        message = outer
 
     # Portfolio attachments
     if attach_portfolio:
@@ -182,7 +207,7 @@ def send_email(
                     "attachment",
                     filename=display_name
                 )
-                outer.attach(part)
+                message.attach(part)
                 logger.info("Attached portfolio file: %s", display_name)
             except Exception as exc:
                 logger.warning("Could not attach file %s: %s", file_path, exc)
@@ -192,7 +217,7 @@ def send_email(
         try:
             dump_path = UPLOAD_DIR.parent / "last_email.eml"
             dump_path.parent.mkdir(parents=True, exist_ok=True)
-            dump_path.write_bytes(outer.as_bytes())
+            dump_path.write_bytes(message.as_bytes())
             logger.info("Wrote email dump to %s", dump_path)
         except Exception as exc:
             logger.warning("Failed to write email dump: %s", exc)
@@ -203,7 +228,7 @@ def send_email(
             server.starttls()
             server.ehlo()
             server.login(smtp_user, smtp_password)
-            refused = server.sendmail(from_email, [to_email], outer.as_bytes())
+            refused = server.sendmail(from_email, [to_email], message.as_bytes())
             if refused:
                 reason = refused.get(to_email) or next(iter(refused.values()))
                 logger.error("SMTP rejected recipient %s: %s", to_email, reason)

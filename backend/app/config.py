@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     MAX_SCRAPING_BATCH_SIZE: int = 10
     EMAIL_SEND_DELAY_SECONDS: int = 5
     MAX_EMAILS_PER_DAY: int = 50
+
+    # Deliverability mode: use cleaner plain-text first-touch emails
+    DELIVERABILITY_MODE_ENABLED: bool = True
     
     class Config:
         env_file = ".env"
