@@ -36,6 +36,7 @@ import {
   Delete,
   Description,
   Download,
+  Edit,
   Email,
   FilterList,
   UploadFile,
@@ -106,7 +107,9 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           clearInterval(pollRef.current!);
           setScrapingTaskId(null);
           queryClient.invalidateQueries({ queryKey: ["companies"] });
-          toast.success(`Enrichment done: ${status.successful_companies} succeeded, ${status.failed_companies} failed`);
+          toast.success(
+            `Enrichment done: ${status.successful_companies} succeeded, ${status.failed_companies} failed`,
+          );
         }
       } catch {
         clearInterval(pollRef.current!);
@@ -135,6 +138,63 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   const [filterNiche, setFilterNiche] = useState<string>("");
   const [filterLocation, setFilterLocation] = useState<string>("");
   const [search, setSearch] = useState<string>("");
+
+  // Edit lead dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editCompany, setEditCompany] = useState<Company | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    website: "",
+    niche: "",
+    location: "",
+    address: "",
+    business_type: "independent",
+    phone: "",
+    ceo_name: "",
+    ceo_email: "",
+  });
+
+  const openEdit = (company: Company) => {
+    const primary = getPrimaryContact(company.contacts);
+    setEditCompany(company);
+    setEditForm({
+      name: company.name,
+      website: company.website || "",
+      niche: company.niche || "",
+      location: company.location || "",
+      address: company.address || "",
+      business_type: company.business_type || "independent",
+      phone: company.phone || "",
+      ceo_name: primary?.name || "",
+      ceo_email: primary?.email || "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditField = (key: string, value: string) =>
+    setEditForm((prev) => ({ ...prev, [key]: value }));
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      api.updateCompany(editCompany!.id, {
+        name: editForm.name,
+        website: editForm.website || undefined,
+        niche: editForm.niche || undefined,
+        location: editForm.location || undefined,
+        address: editForm.address || undefined,
+        business_type: editForm.business_type || "independent",
+        phone: editForm.phone || undefined,
+        ceo_name: editForm.ceo_name || undefined,
+        ceo_email: editForm.ceo_email || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Lead updated");
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setEditOpen(false);
+      setEditCompany(null);
+    },
+    onError: () => toast.error("Failed to update lead"),
+  });
 
   // Manual lead creation dialog state
   const [createOpen, setCreateOpen] = useState(false);
@@ -374,8 +434,8 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
             {scrapingTaskId
               ? `Enriching… ${scrapingProgress}/${scrapingTotal}`
               : selected.length > 0
-              ? `Enrich ${selected.length} selected`
-              : "Enrich All Leads"}
+                ? `Enrich ${selected.length} selected`
+                : "Enrich All Leads"}
           </Button>
           {/* Export */}
           <Button
@@ -532,7 +592,9 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           </Typography>
           <LinearProgress
             variant={scrapingTotal > 0 ? "determinate" : "indeterminate"}
-            value={scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0}
+            value={
+              scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0
+            }
           />
         </Box>
       )}
@@ -643,7 +705,11 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
             sx={{ ml: 1 }}
             disabled={bulkDeleteMutation.isPending}
             onClick={() => {
-              if (window.confirm(`Delete ${selected.length} selected lead${selected.length > 1 ? "s" : ""}? This cannot be undone.`)) {
+              if (
+                window.confirm(
+                  `Delete ${selected.length} selected lead${selected.length > 1 ? "s" : ""}? This cannot be undone.`,
+                )
+              ) {
                 bulkDeleteMutation.mutate(selected);
               }
             }}
@@ -799,6 +865,15 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="Edit lead">
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => openEdit(company)}
+                      >
+                        <Edit fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Delete lead">
                       <IconButton
                         size="small"
@@ -822,6 +897,131 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           </TableBody>
         </Table>
       </TableContainer>
+      {/* ── Edit Lead Dialog ──────────────────────────────────────────── */}
+      <Dialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Edit color="primary" />
+            Edit Lead — {editCompany?.name}
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box display="flex" flexDirection="column" gap={2}>
+            <Typography variant="overline" color="primary" display="block">
+              Company Info
+            </Typography>
+            <Box display="flex" gap={2}>
+              <TextField
+                fullWidth
+                required
+                label="Company Name"
+                value={editForm.name}
+                onChange={(e) => handleEditField("name", e.target.value)}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Website"
+                placeholder="https://example.com"
+                value={editForm.website}
+                onChange={(e) => handleEditField("website", e.target.value)}
+                size="small"
+              />
+            </Box>
+            <Box display="flex" gap={2}>
+              <TextField
+                fullWidth
+                label="Industry / Niche"
+                value={editForm.niche}
+                onChange={(e) => handleEditField("niche", e.target.value)}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Location"
+                placeholder="e.g. Baltimore, MD"
+                value={editForm.location}
+                onChange={(e) => handleEditField("location", e.target.value)}
+                size="small"
+              />
+            </Box>
+            <Box display="flex" gap={2}>
+              <TextField
+                fullWidth
+                label="Address"
+                value={editForm.address}
+                onChange={(e) => handleEditField("address", e.target.value)}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Phone"
+                value={editForm.phone}
+                onChange={(e) => handleEditField("phone", e.target.value)}
+                size="small"
+              />
+            </Box>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Business Type</InputLabel>
+              <Select
+                value={editForm.business_type}
+                label="Business Type"
+                onChange={(e) =>
+                  handleEditField("business_type", e.target.value)
+                }
+              >
+                <MenuItem value="independent">
+                  Independent / Small Business
+                </MenuItem>
+                <MenuItem value="franchise">
+                  Franchise / Corporate Chain
+                </MenuItem>
+              </Select>
+            </FormControl>
+
+            <Divider />
+
+            <Typography variant="overline" color="primary" display="block">
+              Owner / Contact
+            </Typography>
+            <Box display="flex" gap={2}>
+              <TextField
+                fullWidth
+                label="Owner / CEO Full Name"
+                value={editForm.ceo_name}
+                onChange={(e) => handleEditField("ceo_name", e.target.value)}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Personal Email"
+                type="email"
+                value={editForm.ceo_email}
+                onChange={(e) => handleEditField("ceo_email", e.target.value)}
+                size="small"
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<Edit />}
+            onClick={() => updateMutation.mutate()}
+            disabled={!editForm.name || updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Saving…" : "Save Changes"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* ── Manual Lead Creation Dialog ─────────────────────────────────── */}
       <Dialog
         open={createOpen}
