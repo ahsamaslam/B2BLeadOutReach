@@ -4,9 +4,7 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -29,6 +27,8 @@ import {
   Typography,
 } from "@mui/material";
 import { Send, Visibility } from "@mui/icons-material";
+import { PageHeader, StatusChip, EmptyState } from "./primitives";
+import { colors } from "../theme/tokens";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -324,7 +324,9 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
         return next;
       });
       if (result.failed > 0) {
-        const firstError = result.items?.find((item: any) => !item.success)?.error;
+        const firstError = result.items?.find(
+          (item: any) => !item.success,
+        )?.error;
         toast.error(
           firstError
             ? `${result.sent} sent, ${result.failed} failed. ${firstError}`
@@ -391,28 +393,28 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
 
   const getStatusChip = (lead: LeadRow) => {
     if (sentLeadIds.has(lead.id))
-      return <Chip label="Sent" color="success" size="small" />;
+      return <StatusChip tone="green" dot label="Sent" />;
     if (generateMutation.isPending && selectedLeadIds.includes(lead.id))
       return (
         <Box display="flex" alignItems="center" gap={0.5}>
           <CircularProgress size={11} />
-          <Typography variant="caption" color="text.secondary">
-            Generatingâ€¦
-          </Typography>
+          <Typography variant="caption">Generating…</Typography>
         </Box>
       );
     const em = emailByLeadId.get(lead.id);
-    if (!em) return <Chip label="Pending" size="small" variant="outlined" />;
-    if (em.error) return <Chip label="Error" color="error" size="small" />;
-    return <Chip label="Generated" color="primary" size="small" />;
+    if (!em) return <StatusChip tone="default" label="Pending" />;
+    if (em.error) return <StatusChip tone="red" dot label="Error" />;
+    return <StatusChip tone="brand" dot label="Generated" />;
   };
 
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
-    <Container maxWidth="xl" sx={{ mt: 3, mb: 5 }}>
-      <Typography variant="h5" fontWeight="bold" gutterBottom>
-        Broadcast Emails
-      </Typography>
+    <Box>
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Broadcast"
+        description="Generate and send personalized emails to your selected leads."
+      />
 
       {/* Template Config */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -567,7 +569,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
               <TableRow>
                 <TableCell
                   padding="checkbox"
-                  sx={{ width: 42, bgcolor: "grey.100" }}
+                  sx={{ width: 42, bgcolor: colors.bgSunken }}
                 >
                   <Checkbox
                     size="small"
@@ -597,11 +599,12 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
                   <TableCell
                     key={label}
                     sx={{
-                      bgcolor: "grey.100",
-                      fontWeight: 700,
+                      bgcolor: colors.bgSunken,
+                      fontWeight: 600,
                       fontSize: "0.72rem",
                       textTransform: "uppercase",
-                      letterSpacing: "0.02em",
+                      letterSpacing: "0.04em",
+                      color: colors.ink3,
                       width,
                     }}
                   >
@@ -613,11 +616,13 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
             <TableBody>
               {leads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
-                    <Typography color="text.secondary">
-                      Go to <strong>Upload Leads</strong>, select rows, and
-                      click <strong>Broadcast to selected</strong>.
-                    </Typography>
+                  <TableCell colSpan={9} sx={{ p: 0, border: 0 }}>
+                    <EmptyState
+                      icon={<Send />}
+                      tone="brand"
+                      title="No leads queued"
+                      description="Go to Leads, select rows, and click Broadcast to selected."
+                    />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -815,7 +820,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
           </>
         )}
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 

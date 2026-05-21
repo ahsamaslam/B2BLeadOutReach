@@ -2,14 +2,13 @@ import React, { useState } from "react";
 import {
   Box,
   Button,
-  Card,
-  CardContent,
-  Container,
+  Paper,
   TextField,
   Typography,
 } from "@mui/material";
 import toast from "react-hot-toast";
 import { api, authStorage } from "../services/api";
+import { colors } from "../theme/tokens";
 
 type LoginProps = {
   onAuthSuccess: () => void;
@@ -44,12 +43,25 @@ const Login: React.FC<LoginProps> = ({ onAuthSuccess }) => {
   };
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 10 }}>
-      <Card>
-        <CardContent>
-          <Typography variant="h5" fontWeight="bold" mb={3}>
-            {isRegisterMode ? "Create Account" : "Login"}
+    <Box
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+      minHeight="100vh"
+      sx={{ bgcolor: colors.bg }}
+    >
+      <Paper
+        variant="outlined"
+        sx={{ width: "100%", maxWidth: 400, p: 4, borderRadius: 3 }}
+      >
+        <Box mb={3}>
+          <Typography variant="h5" fontWeight={700} color={colors.brand}>
+            SendMaster
           </Typography>
+          <Typography variant="h6" fontWeight={600} mt={1}>
+            {isRegisterMode ? "Create Account" : "Sign in"}
+          </Typography>
+        </Box>
 
           <Box
             component="form"
@@ -93,9 +105,9 @@ const Login: React.FC<LoginProps> = ({ onAuthSuccess }) => {
                 : "Need an account? Register"}
             </Button>
           </Box>
-        </CardContent>
-      </Card>
-    </Container>
+        </Box>
+      </Paper>
+    </Box>
   );
 };
 

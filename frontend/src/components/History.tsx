@@ -2,9 +2,7 @@
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -25,6 +23,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { PageHeader, StatCard, StatusChip, EmptyState } from "./primitives";
+import { colors } from "../theme/tokens";
 import {
   Search,
   MarkEmailRead,
@@ -203,31 +203,34 @@ const FollowUpsDialog: React.FC<{
                   mb={1}
                 >
                   <Box display="flex" alignItems="center" gap={1}>
-                    <Chip
+                    <StatusChip
+                      tone="brand"
                       label={`Round ${fu.round_number}`}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      sx={{ fontWeight: 700 }}
                     />
-                    <Chip
+                    <StatusChip
+                      tone={
+                        fu.status === "sent"
+                          ? "green"
+                          : fu.status === "failed"
+                            ? "red"
+                            : fu.status === "pending"
+                              ? "amber"
+                              : "default"
+                      }
+                      dot
                       label={
                         fu.status.charAt(0).toUpperCase() + fu.status.slice(1)
                       }
-                      size="small"
-                      color={STATUS_COLOR[fu.status] ?? "default"}
                     />
                     {fu.opened_at && (
-                      <Chip
-                        icon={<MarkEmailRead fontSize="small" />}
+                      <StatusChip
+                        tone="green"
+                        dot
                         label={
                           fu.open_count > 1
                             ? `Opened ×${fu.open_count}`
                             : "Opened"
                         }
-                        size="small"
-                        color="success"
-                        variant="outlined"
                       />
                     )}
                   </Box>
@@ -482,90 +485,33 @@ const History: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      {/* â”€â”€ Header â”€â”€ */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
-        <Box>
-          <Typography variant="h4" fontWeight="bold">
-            Sent History
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mt={0.5}>
-            Leads whose emails have been sent Â· auto-refreshes every 30 s
-          </Typography>
-        </Box>
-        <Chip
-          label={`${filtered.length} lead${filtered.length !== 1 ? "s" : ""}`}
-          color="primary"
-          variant="outlined"
-        />
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Sent History"
+        description="Leads whose emails have been sent · auto-refreshes every 30 s"
+      />
 
-      {/* â”€â”€ Stats bar â”€â”€ */}
-      <Box display="flex" gap={2} mb={3} flexWrap="wrap">
-        {[
-          {
-            label: "Total Sent",
-            value: filtered.length,
-            color: "#1976d2",
-            bg: "#e3f2fd",
-          },
-          {
-            label: "Opened",
-            value: openedCount,
-            color: "#2e7d32",
-            bg: "#e8f5e9",
-            icon: <MarkEmailRead fontSize="small" />,
-          },
-          {
-            label: "Not Opened",
-            value: notOpenedCount,
-            color: "#c62828",
-            bg: "#ffebee",
-            icon: <MarkEmailUnread fontSize="small" />,
-          },
-          {
-            label: "Open Rate",
-            value: `${openRate}%`,
-            color: "#6a1b9a",
-            bg: "#f3e5f5",
-            icon: <TrendingUp fontSize="small" />,
-          },
-        ].map((stat) => (
-          <Paper
-            key={stat.label}
-            variant="outlined"
-            sx={{
-              flex: "1 1 160px",
-              p: 2,
-              borderRadius: 2,
-              borderColor: stat.color,
-              bgcolor: stat.bg,
-              display: "flex",
-              alignItems: "center",
-              gap: 1.5,
-            }}
-          >
-            {stat.icon && <Box sx={{ color: stat.color }}>{stat.icon}</Box>}
-            <Box>
-              <Typography
-                variant="h5"
-                fontWeight="bold"
-                sx={{ color: stat.color, lineHeight: 1 }}
-              >
-                {stat.value}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {stat.label}
-              </Typography>
-            </Box>
-          </Paper>
-        ))}
-      </Box>
+      {/* Stats bar */}
+      <Grid container spacing={2} mb={3}>
+        <Grid item xs={6} md={3}>
+          <StatCard label="Total Sent" value={filtered.length} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard
+            label="Opened"
+            value={openedCount}
+            delta={`${openRate}%`}
+            deltaTone="green"
+          />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard label="Not Opened" value={notOpenedCount} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard label="Open Rate" value={`${openRate}%`} />
+        </Grid>
+      </Grid>
 
       {/* â”€â”€ Search â”€â”€ */}
       <TextField
@@ -592,7 +538,16 @@ const History: React.FC = () => {
           <Table size="small">
             <TableHead>
               <TableRow
-                sx={{ "& th": { fontWeight: "bold", bgcolor: "grey.50" } }}
+                sx={{
+                  "& th": {
+                    fontWeight: 600,
+                    bgcolor: colors.bgSunken,
+                    color: colors.ink3,
+                    fontSize: 12,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  },
+                }}
               >
                 <TableCell>Company</TableCell>
                 <TableCell>Recipient</TableCell>
@@ -610,12 +565,21 @@ const History: React.FC = () => {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center">
-                    <Typography color="text.secondary" py={4}>
-                      {search
-                        ? "No results match your search"
-                        : "No sent emails yet"}
-                    </Typography>
+                  <TableCell colSpan={11} sx={{ p: 0, border: 0 }}>
+                    <EmptyState
+                      icon={<MarkEmailRead />}
+                      tone="brand"
+                      title={
+                        search
+                          ? "No results match your search"
+                          : "No sent emails yet"
+                      }
+                      description={
+                        search
+                          ? "Try a different keyword."
+                          : "Start a broadcast campaign to see your outreach history here."
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -626,7 +590,7 @@ const History: React.FC = () => {
                     sx={
                       lead.opened_at
                         ? {
-                            borderLeft: "3px solid #2e7d32",
+                            borderLeft: `3px solid ${colors.green}`,
                             "& td:first-of-type": { pl: "calc(16px - 3px)" },
                           }
                         : {}
@@ -689,26 +653,20 @@ const History: React.FC = () => {
                           }
                           arrow
                         >
-                          <Chip
-                            icon={<MarkEmailRead fontSize="small" />}
-                            label={
-                              lead.open_count > 1
-                                ? `Opened Ã—${lead.open_count}`
-                                : "Opened"
-                            }
-                            color="success"
-                            size="small"
-                            sx={{ cursor: "help", fontWeight: 600 }}
-                          />
+                          <span>
+                            <StatusChip
+                              tone="green"
+                              dot
+                              label={
+                                lead.open_count > 1
+                                  ? `Opened ×${lead.open_count}`
+                                  : "Opened"
+                              }
+                            />
+                          </span>
                         </Tooltip>
                       ) : (
-                        <Chip
-                          icon={<MarkEmailUnread fontSize="small" />}
-                          label="Not Opened"
-                          size="small"
-                          variant="outlined"
-                          color="error"
-                        />
+                        <StatusChip tone="red" dot label="Not Opened" />
                       )}
                     </TableCell>
                     <TableCell align="center">
@@ -791,7 +749,7 @@ const History: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 

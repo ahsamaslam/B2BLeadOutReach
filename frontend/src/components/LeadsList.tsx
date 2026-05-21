@@ -5,7 +5,6 @@ import {
   Button,
   Checkbox,
   Chip,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -29,6 +28,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { PageHeader, StatusChip, EmptyState } from "./primitives";
+import { StorageOutlined } from "@mui/icons-material";
 import {
   Add,
   AutoFixHigh,
@@ -70,17 +71,20 @@ interface Company {
   contacts: Contact[];
 }
 
-const STATUS_COLORS: Record<
+const STATUS_TONE: Record<
   string,
-  "default" | "primary" | "secondary" | "success" | "warning" | "error"
+  "default" | "amber" | "brand" | "violet" | "green" | "red"
 > = {
   created: "default",
-  scraping: "primary",
-  data_parsed: "secondary",
-  drafted: "warning",
-  approved: "success",
-  sent: "success",
-  error: "error",
+  scraping: "amber",
+  data_parsed: "brand",
+  enriched: "brand",
+  drafted: "violet",
+  approved: "violet",
+  sent: "brand",
+  opened: "green",
+  replied: "violet",
+  error: "red",
 };
 
 interface LeadsListProps {
@@ -398,110 +402,105 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   if (isLoading) return <Typography sx={{ p: 4 }}>Loading leads…</Typography>;
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 3, mb: 4 }}>
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={2}
-      >
-        <Typography variant="h5" fontWeight="bold">
-          Upload Leads ({filtered.length})
-        </Typography>
-        <Box display="flex" gap={1} flexWrap="wrap">
-          {/* Add Manual Lead */}
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<Add />}
-            size="small"
-            onClick={() => setCreateOpen(true)}
-          >
-            Add Lead
-          </Button>
-          {/* Enrich / Scrape */}
-          <Button
-            variant="contained"
-            color="warning"
-            startIcon={<AutoFixHigh />}
-            size="small"
-            disabled={enrichMutation.isPending || !!scrapingTaskId}
-            onClick={() => {
-              const ids = selected.length > 0 ? selected : undefined;
-              enrichMutation.mutate(ids);
-            }}
-          >
-            {scrapingTaskId
-              ? `Enriching… ${scrapingProgress}/${scrapingTotal}`
-              : selected.length > 0
-                ? `Enrich ${selected.length} selected`
-                : "Enrich All Leads"}
-          </Button>
-          {/* Export */}
-          <Button
-            variant="outlined"
-            startIcon={<Download />}
-            size="small"
-            onClick={() => handleExport("csv")}
-          >
-            Export CSV
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<Download />}
-            size="small"
-            onClick={() => handleExport("xlsx")}
-          >
-            Export XLSX
-          </Button>
-          {/* Send selected */}
-          {selected.length > 0 && onSendToSelected && (
+    <Box>
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Leads"
+        description={`${filtered.length} lead${filtered.length !== 1 ? "s" : ""} in pipeline`}
+        actions={
+          <Box display="flex" gap={1} flexWrap="wrap">
+            {/* Add Manual Lead */}
             <Button
               variant="contained"
-              color="primary"
-              startIcon={<Email />}
+              color="success"
+              startIcon={<Add />}
               size="small"
+              onClick={() => setCreateOpen(true)}
+            >
+              Add Lead
+            </Button>
+            {/* Enrich / Scrape */}
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<AutoFixHigh />}
+              size="small"
+              disabled={enrichMutation.isPending || !!scrapingTaskId}
               onClick={() => {
-                const selectedCompanies = companies.filter((c) =>
-                  selected.includes(c.id),
-                );
-                const payloads: BroadcastLeadPayload[] = selectedCompanies.map(
-                  (c) => {
-                    const primary = getPrimaryContact(c.contacts);
-                    return {
-                      id: c.id,
-                      company_name: c.name,
-                      niche: c.niche ?? "",
-                      domain: c.website ?? "",
-                      location: c.location ?? "",
-                      platform: c.business_type ?? "",
-                      decision_maker: primary?.name ?? "",
-                      owner_name: primary?.name ?? "",
-                      role: primary?.role ?? "",
-                      linkedin: "",
-                      email_pattern: "",
-                      ai_gap: "",
-                      remarks: "",
-                      email: primary?.email ?? undefined,
-                    };
-                  },
-                );
-                try {
-                  localStorage.setItem(
-                    BROADCAST_LEADS_STORAGE_KEY,
-                    JSON.stringify(payloads),
-                  );
-                } catch {
-                  /* ignore storage errors */
-                }
-                onSendToSelected(selected);
+                const ids = selected.length > 0 ? selected : undefined;
+                enrichMutation.mutate(ids);
               }}
             >
-              Broadcast to {selected.length} selected
+              {scrapingTaskId
+                ? `Enriching… ${scrapingProgress}/${scrapingTotal}`
+                : selected.length > 0
+                  ? `Enrich ${selected.length} selected`
+                  : "Enrich All Leads"}
             </Button>
-          )}
-        </Box>
-      </Box>
+            {/* Export */}
+            <Button
+              variant="outlined"
+              startIcon={<Download />}
+              size="small"
+              onClick={() => handleExport("csv")}
+            >
+              Export CSV
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<Download />}
+              size="small"
+              onClick={() => handleExport("xlsx")}
+            >
+              Export XLSX
+            </Button>
+            {/* Send selected */}
+            {selected.length > 0 && onSendToSelected && (
+              <Button
+                variant="contained"
+                startIcon={<Email />}
+                size="small"
+                onClick={() => {
+                  const selectedCompanies = companies.filter((c) =>
+                    selected.includes(c.id),
+                  );
+                  const payloads: BroadcastLeadPayload[] =
+                    selectedCompanies.map((c) => {
+                      const primary = getPrimaryContact(c.contacts);
+                      return {
+                        id: c.id,
+                        company_name: c.name,
+                        niche: c.niche ?? "",
+                        domain: c.website ?? "",
+                        location: c.location ?? "",
+                        platform: c.business_type ?? "",
+                        decision_maker: primary?.name ?? "",
+                        owner_name: primary?.name ?? "",
+                        role: primary?.role ?? "",
+                        linkedin: "",
+                        email_pattern: "",
+                        ai_gap: "",
+                        remarks: "",
+                        email: primary?.email ?? undefined,
+                      };
+                    });
+                  try {
+                    localStorage.setItem(
+                      BROADCAST_LEADS_STORAGE_KEY,
+                      JSON.stringify(payloads),
+                    );
+                  } catch {
+                    /* ignore storage errors */
+                  }
+                  onSendToSelected(selected);
+                }}
+              >
+                Broadcast to {selected.length} selected
+              </Button>
+            )}
+          </Box>
+        }
+      />
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle1" fontWeight={700} mb={1}>
@@ -745,12 +744,13 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           <TableBody>
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell
-                  colSpan={10}
-                  align="center"
-                  sx={{ py: 4, color: "text.secondary" }}
-                >
-                  No leads found
+                <TableCell colSpan={11} sx={{ p: 0, border: 0 }}>
+                  <EmptyState
+                    icon={<StorageOutlined />}
+                    tone="brand"
+                    title="No leads found"
+                    description="Upload a CSV/XLSX file or add a lead manually to get started."
+                  />
                 </TableCell>
               </TableRow>
             )}
@@ -790,15 +790,7 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {company.niche ? (
-                      <Chip
-                        label={company.niche}
-                        size="small"
-                        variant="outlined"
-                      />
-                    ) : (
-                      "—"
-                    )}
+                    {company.niche ? <StatusChip label={company.niche} /> : "—"}
                   </TableCell>
                   <TableCell>{company.location || "—"}</TableCell>
                   <TableCell
@@ -840,28 +832,25 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {company.business_type === "franchise" ? (
-                      <Chip
-                        label="Franchise"
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                      />
-                    ) : (
-                      <Chip
-                        label="Independent"
-                        size="small"
-                        color="default"
-                        variant="outlined"
-                      />
-                    )}
+                    <StatusChip
+                      tone={
+                        company.business_type === "franchise"
+                          ? "amber"
+                          : "default"
+                      }
+                      label={
+                        company.business_type === "franchise"
+                          ? "Franchise"
+                          : "Independent"
+                      }
+                    />
                   </TableCell>
                   <TableCell>{company.phone || "—"}</TableCell>
                   <TableCell>
-                    <Chip
+                    <StatusChip
+                      tone={STATUS_TONE[company.status] ?? "default"}
+                      dot
                       label={company.status}
-                      size="small"
-                      color={STATUS_COLORS[company.status] || "default"}
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1346,7 +1335,7 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 

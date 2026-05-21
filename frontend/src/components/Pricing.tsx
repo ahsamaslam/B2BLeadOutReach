@@ -4,8 +4,6 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
-  Container,
   Divider,
   Grid,
   List,
@@ -17,6 +15,8 @@ import {
 import { Check, Star } from "@mui/icons-material";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
+import { PageHeader, StatusChip } from "./primitives";
+import { colors } from "../theme/tokens";
 
 interface Plan {
   id: string;
@@ -37,7 +37,7 @@ const PLANS: Plan[] = [
     price: 0,
     period: "forever",
     tagline: "Try the platform with no commitment",
-    color: "#757575",
+    color: colors.ink3,
     features: [
       "10 leads per month",
       "Basic email sending",
@@ -59,7 +59,7 @@ const PLANS: Plan[] = [
     price: 49,
     period: "month",
     tagline: "Perfect for freelancers and small teams",
-    color: "#1976d2",
+    color: colors.brand,
     features: [
       "100 leads per month",
       "Full email campaigns",
@@ -83,7 +83,7 @@ const PLANS: Plan[] = [
     price: 149,
     period: "month",
     tagline: "For growing agencies",
-    color: "#388e3c",
+    color: colors.green,
     recommended: true,
     features: [
       "500 leads per month",
@@ -108,7 +108,7 @@ const PLANS: Plan[] = [
     price: 499,
     period: "month",
     tagline: "Unlimited scale, white-label ready",
-    color: "#7b1fa2",
+    color: colors.violet,
     features: [
       "Unlimited leads",
       "White-label branding",
@@ -137,15 +137,12 @@ const Pricing: React.FC = () => {
   const currentPlan = settingsData?.plan ?? "free";
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box textAlign="center" mb={6}>
-        <Typography variant="h3" fontWeight="bold" gutterBottom>
-          Pricing Plans
-        </Typography>
-        <Typography color="text.secondary" variant="h6">
-          Choose the plan that scales with your outreach
-        </Typography>
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Account"
+        title="Pricing Plans"
+        description="Choose the plan that scales with your outreach"
+      />
 
       <Grid container spacing={3} alignItems="stretch">
         {PLANS.map((plan) => {
@@ -153,45 +150,43 @@ const Pricing: React.FC = () => {
           return (
             <Grid item xs={12} sm={6} md={3} key={plan.id}>
               <Card
-                variant={plan.recommended ? "elevation" : "outlined"}
-                elevation={plan.recommended ? 8 : 1}
+                variant="outlined"
+                elevation={0}
                 sx={{
                   height: "100%",
                   display: "flex",
                   flexDirection: "column",
-                  border: isCurrent ? `2px solid ${plan.color}` : undefined,
+                  border: isCurrent
+                    ? `2px solid ${colors.brand}`
+                    : plan.recommended
+                      ? `2px solid ${colors.brand}`
+                      : undefined,
                   position: "relative",
                   overflow: "visible",
                 }}
               >
                 {plan.recommended && (
-                  <Chip
-                    icon={<Star />}
-                    label="Most Popular"
-                    color="success"
-                    size="small"
+                  <Box
                     sx={{
                       position: "absolute",
                       top: -14,
                       left: "50%",
                       transform: "translateX(-50%)",
-                      fontWeight: "bold",
                     }}
-                  />
+                  >
+                    <StatusChip tone="green" label="Most Popular" />
+                  </Box>
                 )}
                 {isCurrent && (
-                  <Chip
-                    label="Current Plan"
-                    size="small"
+                  <Box
                     sx={{
                       position: "absolute",
                       top: plan.recommended ? 18 : -14,
                       right: 12,
-                      bgcolor: plan.color,
-                      color: "white",
-                      fontWeight: "bold",
                     }}
-                  />
+                  >
+                    <StatusChip tone="brand" dot label="Current Plan" />
+                  </Box>
                 )}
                 <CardContent sx={{ flex: 1 }}>
                   <Typography
@@ -288,7 +283,7 @@ const Pricing: React.FC = () => {
                   style={{
                     textAlign: "left",
                     padding: "12px 16px",
-                    borderBottom: "2px solid #e0e0e0",
+                    borderBottom: `2px solid ${colors.border}`,
                   }}
                 >
                   Feature
@@ -299,8 +294,8 @@ const Pricing: React.FC = () => {
                     style={{
                       textAlign: "center",
                       padding: "12px 16px",
-                      borderBottom: "2px solid #e0e0e0",
-                      color: p.color,
+                      borderBottom: `2px solid ${colors.border}`,
+                      color: p.id === currentPlan ? colors.brand : colors.ink2,
                       fontWeight: p.id === currentPlan ? "bold" : "normal",
                     }}
                   >
@@ -314,7 +309,9 @@ const Pricing: React.FC = () => {
               {Object.keys(PLANS[0].limits).map((feature, i) => (
                 <tr
                   key={feature}
-                  style={{ background: i % 2 === 0 ? "#fafafa" : "white" }}
+                  style={{
+                    background: i % 2 === 0 ? colors.bgSunken : "white",
+                  }}
                 >
                   <td style={{ padding: "10px 16px", fontWeight: 500 }}>
                     {feature}
@@ -333,7 +330,7 @@ const Pricing: React.FC = () => {
           </table>
         </Box>
       </Box>
-    </Container>
+    </Box>
   );
 };
 

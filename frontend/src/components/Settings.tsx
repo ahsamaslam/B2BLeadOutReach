@@ -5,7 +5,6 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Container,
   Grid,
   IconButton,
   InputAdornment,
@@ -14,8 +13,6 @@ import {
   Tabs,
   TextField,
   Typography,
-  alpha,
-  useTheme,
 } from "@mui/material";
 import {
   Visibility,
@@ -31,16 +28,18 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { PageHeader, StatusChip } from "./primitives";
+import { colors } from "../theme/tokens";
 import Portfolio from "./Portfolio";
 
 const CATEGORY_META: Record<
   string,
   { label: string; icon: React.ReactNode; color: string }
 > = {
-  branding: { label: "Company Branding", icon: <Business />, color: "#1976d2" },
-  email: { label: "Email / SMTP", icon: <Email />, color: "#2e7d32" },
-  tracking: { label: "Email Tracking", icon: <TrackChanges />, color: "#9c27b0" },
-  followup: { label: "Follow-up Automation", icon: <ScheduleSend />, color: "#ed6c02" },
+  branding: { label: "Company Branding", icon: <Business />, color: colors.brand },
+  email: { label: "Email / SMTP", icon: <Email />, color: colors.green },
+  tracking: { label: "Email Tracking", icon: <TrackChanges />, color: colors.violet },
+  followup: { label: "Follow-up Automation", icon: <ScheduleSend />, color: colors.amber },
 };
 
 const PLAN_COLORS: Record<
@@ -59,7 +58,6 @@ const CategorySection: React.FC<{
   color: string;
   children: React.ReactNode;
 }> = ({ title, icon, color, children }) => {
-  const theme = useTheme();
 
   return (
     <Paper
@@ -71,8 +69,8 @@ const CategorySection: React.FC<{
         borderColor: "divider",
         transition: "all 0.2s",
         "&:hover": {
-          borderColor: alpha(color, 0.5),
-          boxShadow: `0 4px 12px ${alpha(color, 0.1)}`,
+          borderColor: color,
+          
         },
       }}
     >
@@ -85,10 +83,10 @@ const CategorySection: React.FC<{
         sx={{
           borderBottom: "1px solid",
           borderColor: "divider",
-          background: `linear-gradient(135deg, ${alpha(color, 0.05)} 0%, ${alpha(color, 0.02)} 100%)`,
+          bgcolor: colors.bgSunken,
         }}
       >
-        <Box sx={{ p: 1, borderRadius: 2, bgcolor: alpha(color, 0.1), color: color, display: "flex" }}>
+        <Box sx={{ p: 1, borderRadius: 2, bgcolor: colors.bgSunken, color: color, display: "flex" }}>
           {icon}
         </Box>
         <Typography variant="h6" fontWeight={700} color={color}>
@@ -101,7 +99,6 @@ const CategorySection: React.FC<{
 };
 
 const Settings: React.FC = () => {
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const [settingsTab, setSettingsTab] = useState(0);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -149,15 +146,15 @@ const Settings: React.FC = () => {
   const schema = data?.schema ?? {};
 
   return (
-    <Box sx={{ bgcolor: "grey.50", minHeight: "100vh", py: 4 }}>
-      <Container maxWidth="lg">
+    <Box >
+      <Box>
         {/* Tabs */}
         <Paper elevation={0} sx={{ borderRadius: 3, overflow: "hidden", border: "1px solid", borderColor: "divider", mb: 4 }}>
           <Tabs
             value={settingsTab}
             onChange={(_, v) => setSettingsTab(v)}
             sx={{
-              bgcolor: "white",
+              bgcolor: "background.paper",
               "& .MuiTab-root": { textTransform: "none", fontWeight: 600, fontSize: "1rem", py: 2 },
             }}
           >
@@ -179,11 +176,7 @@ const Settings: React.FC = () => {
                     fontWeight={800}
                     gutterBottom
                     sx={{
-                      background: "linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)",
-                      backgroundClip: "text",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                    }}
+                      sx={{ color: colors.brand }}
                   >
                     Settings
                   </Typography>
@@ -192,12 +185,7 @@ const Settings: React.FC = () => {
                       {data?.tenant_name}
                     </Typography>
                     <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "text.secondary" }} />
-                    <Chip
-                      label={data?.plan?.toUpperCase() ?? "FREE"}
-                      color={PLAN_COLORS[data?.plan ?? "free"]}
-                      size="small"
-                      sx={{ fontWeight: 700, fontSize: "0.75rem" }}
-                    />
+                    <StatusChip label={data?.plan?.toUpperCase() ?? "FREE"} tone="brand" />
                   </Box>
                 </Box>
 
@@ -218,8 +206,8 @@ const Settings: React.FC = () => {
                     textTransform: "none",
                     fontWeight: 600,
                     px: 3,
-                    boxShadow: dirty ? theme.shadows[4] : "none",
-                    "&:hover": { boxShadow: theme.shadows[8] },
+                    boxShadow: "none",
+
                   }}
                 >
                   {saveMutation.isPending ? "Saving..." : "Save Changes"}
@@ -300,7 +288,7 @@ const Settings: React.FC = () => {
                     display="flex"
                     alignItems="center"
                     gap={1.5}
-                    sx={{ background: "linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)" }}
+                    sx={{ bgcolor: colors.amberSoft }}
                   >
                     <Box sx={{ fontSize: 28 }}>⚠️</Box>
                     <Box>
@@ -319,19 +307,19 @@ const Settings: React.FC = () => {
                         label: "SPF Record",
                         code: "v=spf1 include:your-smtp-provider.com ~all",
                         desc: "Add as a TXT record on your sending domain. Authorizes which IPs can send on your behalf.",
-                        color: "#1976d2",
+                        color: colors.brand,
                       },
                       {
                         label: "DKIM Signing",
                         code: "Enable in your SMTP provider dashboard (Hostinger, Google Workspace, etc.)",
                         desc: "Cryptographically signs outgoing emails. Your provider generates the DNS record.",
-                        color: "#2e7d32",
+                        color: colors.green,
                       },
                       {
                         label: "DMARC Record",
                         code: "v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com",
                         desc: "Add as a TXT record at _dmarc.yourdomain.com. Ties SPF + DKIM together.",
-                        color: "#9c27b0",
+                        color: colors.violet,
                       },
                     ].map(({ label, code, desc, color }) => (
                       <Box key={label} mb={3}>
@@ -345,7 +333,7 @@ const Settings: React.FC = () => {
                           component="code"
                           sx={{
                             display: "block",
-                            bgcolor: alpha(color, 0.05),
+                            bgcolor: colors.bgSunken,
                             px: 2,
                             py: 1.5,
                             borderRadius: 1.5,
@@ -354,7 +342,7 @@ const Settings: React.FC = () => {
                             wordBreak: "break-all",
                             mb: 1,
                             border: "1px solid",
-                            borderColor: alpha(color, 0.2),
+                            borderColor: "divider",
                             color: "text.primary",
                           }}
                         >
@@ -371,7 +359,7 @@ const Settings: React.FC = () => {
             </Box>
           </>
         )}
-      </Container>
+      </Box>
     </Box>
   );
 };

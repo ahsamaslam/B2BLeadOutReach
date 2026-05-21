@@ -2,9 +2,7 @@ import React, { useState } from "react";
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Container,
   FormControl,
   MenuItem,
   Paper,
@@ -21,6 +19,8 @@ import { People } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { PageHeader, StatusChip } from "./primitives";
+import { colors } from "../theme/tokens";
 
 const PLAN_COLORS: Record<
   string,
@@ -61,23 +61,28 @@ const AdminTenants: React.FC = () => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box display="flex" alignItems="center" gap={2} mb={3}>
-        <People color="primary" sx={{ fontSize: 36 }} />
-        <Box>
-          <Typography variant="h4" fontWeight="bold">
-            Tenant Management
-          </Typography>
-          <Typography color="text.secondary">
-            Admin view — manage all tenants and their subscription plans
-          </Typography>
-        </Box>
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Admin"
+        title="Tenant Management"
+        description="Admin view — manage all tenants and their subscription plans"
+      />
 
       <TableContainer component={Paper} variant="outlined">
         <Table>
           <TableHead>
-            <TableRow sx={{ bgcolor: "grey.50" }}>
+            <TableRow
+              sx={{
+                "& th": {
+                  fontWeight: 600,
+                  bgcolor: colors.bgSunken,
+                  color: colors.ink3,
+                  fontSize: 12,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                },
+              }}
+            >
               <TableCell>
                 <strong>Tenant</strong>
               </TableCell>
@@ -110,19 +115,18 @@ const AdminTenants: React.FC = () => {
                   </TableCell>
                   <TableCell>{tenant.user_count}</TableCell>
                   <TableCell>
-                    <Chip
+                    <StatusChip
+                      tone={tenant.is_active ? "green" : "red"}
+                      dot
                       label={tenant.is_active ? "Active" : "Inactive"}
-                      color={tenant.is_active ? "success" : "error"}
-                      size="small"
                     />
                   </TableCell>
                   <TableCell>{tenant.created_at}</TableCell>
                   <TableCell>
                     <Box display="flex" alignItems="center" gap={1}>
-                      <Chip
+                      <StatusChip
                         label={tenant.plan.toUpperCase()}
-                        color={PLAN_COLORS[tenant.plan]}
-                        size="small"
+                        tone="brand"
                       />
                       <FormControl size="small" sx={{ minWidth: 130 }}>
                         <Select
@@ -164,7 +168,7 @@ const AdminTenants: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
-    </Container>
+    </Box>
   );
 };
 

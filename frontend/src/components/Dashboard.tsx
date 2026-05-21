@@ -2,13 +2,7 @@
 import {
   Box,
   Button,
-  Card,
-  CardContent,
-  Chip,
-  Container,
   Grid,
-  Paper,
-  Stack,
   Table,
   TableBody,
   TableCell,
@@ -16,21 +10,12 @@ import {
   TableHead,
   TableRow,
   Typography,
-  alpha,
-  useTheme,
 } from "@mui/material";
-import {
-  ArrowForward,
-  CheckCircle,
-  TrendingUp,
-  TrendingDown,
-  Email,
-  Error as ErrorIcon,
-  Drafts,
-  Send,
-} from "@mui/icons-material";
+import { ArrowForward, Email } from "@mui/icons-material";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
+import { PageHeader, StatCard, StatusChip, EmptyState } from "./primitives";
+import { colors } from "../theme/tokens";
 
 type SentLead = {
   id: number;
@@ -49,135 +34,7 @@ interface DashboardProps {
   onShowHistory?: () => void;
 }
 
-const StatCard: React.FC<{
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  trend?: { value: number; isPositive: boolean };
-  color?: string;
-  subtitle?: string;
-  emphasized?: boolean;
-}> = ({
-  title,
-  value,
-  icon,
-  trend,
-  color = "#1976d2",
-  subtitle,
-  emphasized = false,
-}) => {
-  const theme = useTheme();
-
-  return (
-    <Card
-      sx={{
-        height: "100%",
-        position: "relative",
-        overflow: "hidden",
-        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-        border: emphasized ? `2px solid ${color}` : "1px solid",
-        borderColor: emphasized ? color : "divider",
-        "&:hover": {
-          transform: "translateY(-4px)",
-          boxShadow: emphasized ? theme.shadows[8] : theme.shadows[4],
-        },
-      }}
-    >
-      <Box
-        sx={{
-          position: "absolute",
-          top: -20,
-          right: -20,
-          width: 120,
-          height: 120,
-          borderRadius: "50%",
-          bgcolor: alpha(color, 0.05),
-        }}
-      />
-      <CardContent sx={{ position: "relative", height: "100%" }}>
-        <Stack spacing={2}>
-          <Box
-            display="flex"
-            justifyContent="space-between"
-            alignItems="flex-start"
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              fontWeight={500}
-              letterSpacing={0.5}
-              textTransform="uppercase"
-              fontSize="0.75rem"
-            >
-              {title}
-            </Typography>
-            <Box
-              sx={{
-                p: 1,
-                borderRadius: 2,
-                bgcolor: alpha(color, 0.1),
-                color: color,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {icon}
-            </Box>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="h3"
-              fontWeight={700}
-              sx={{
-                background: emphasized
-                  ? `linear-gradient(135deg, ${color} 0%, ${alpha(color, 0.7)} 100%)`
-                  : "inherit",
-                backgroundClip: emphasized ? "text" : "inherit",
-                WebkitBackgroundClip: emphasized ? "text" : "inherit",
-                WebkitTextFillColor: emphasized ? "transparent" : "inherit",
-                mb: subtitle ? 0.5 : 0,
-              }}
-            >
-              {value}
-            </Typography>
-            {subtitle && (
-              <Typography variant="caption" color="text.secondary">
-                {subtitle}
-              </Typography>
-            )}
-          </Box>
-
-          {trend && (
-            <Box display="flex" alignItems="center" gap={0.5}>
-              {trend.isPositive ? (
-                <TrendingUp sx={{ fontSize: 16, color: "success.main" }} />
-              ) : (
-                <TrendingDown sx={{ fontSize: 16, color: "error.main" }} />
-              )}
-              <Typography
-                variant="caption"
-                fontWeight={600}
-                color={trend.isPositive ? "success.main" : "error.main"}
-              >
-                {trend.isPositive ? "+" : ""}
-                {trend.value}%
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                vs last month
-              </Typography>
-            </Box>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-};
-
 const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
-  const theme = useTheme();
-
   const { data: analytics } = useQuery({
     queryKey: ["analytics"],
     queryFn: api.getAnalytics,
@@ -195,160 +52,133 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
     (analytics?.companies_by_status?.sent || 0);
 
   return (
-    <Box sx={{ bgcolor: "grey.50", minHeight: "100vh", py: 4 }}>
-      <Container maxWidth="xl">
-        <Box mb={4}>
-          <Typography
-            variant="h4"
-            component="h1"
-            fontWeight={800}
-            gutterBottom
-            sx={{
-              background: "linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)",
-              backgroundClip: "text",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
+    <Box>
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description="Live snapshot of your lead generation pipeline."
+        actions={
+          <Button
+            variant="outlined"
+            endIcon={<ArrowForward />}
+            onClick={onShowHistory}
           >
-            Dashboard
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Overview of your lead generation pipeline
-          </Typography>
-        </Box>
+            Sent history
+          </Button>
+        }
+      />
 
-        <Grid container spacing={3} mb={3}>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Total Leads"
-              value={analytics?.total_companies || 0}
-              icon={<Email />}
-              color="#1976d2"
-              emphasized
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Emails Sent"
-              value={analytics?.total_emails_sent || 0}
-              icon={<Send />}
-              color="#2e7d32"
-              emphasized
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Open Rate"
-              value={`${analytics?.email_open_rate?.toFixed(0) || 0}%`}
-              icon={<CheckCircle />}
-              color="#ed6c02"
-              emphasized
-              subtitle="Last 30 days"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Success Rate"
-              value={`${analytics?.scraping_success_rate?.toFixed(0) || 0}%`}
-              icon={<TrendingUp />}
-              color="#9c27b0"
-              emphasized
-              subtitle="Data enrichment"
-            />
-          </Grid>
+      {/* Primary KPIs */}
+      <Grid container spacing={2} mb={2.5}>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Total Leads"
+            value={analytics?.total_companies ?? 0}
+          />
         </Grid>
-
-        <Grid container spacing={2} mb={4}>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Enriched"
-              value={totalEnriched}
-              icon={<CheckCircle sx={{ fontSize: 20 }} />}
-              color="#388e3c"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Emails Drafted"
-              value={analytics?.companies_by_status?.drafted || 0}
-              icon={<Drafts sx={{ fontSize: 20 }} />}
-              color="#1976d2"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Awaiting Approval"
-              value={analytics?.companies_by_status?.approved || 0}
-              icon={<CheckCircle sx={{ fontSize: 20 }} />}
-              color="#ed6c02"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Errors"
-              value={analytics?.companies_by_status?.error || 0}
-              icon={<ErrorIcon sx={{ fontSize: 20 }} />}
-              color="#d32f2f"
-            />
-          </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Emails Sent"
+            value={analytics?.total_emails_sent ?? 0}
+          />
         </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Open Rate"
+            value={`${(analytics?.email_open_rate ?? 0).toFixed(0)}%`}
+            sub="Last 30 days"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Enrichment Success"
+            value={`${(analytics?.scraping_success_rate ?? 0).toFixed(0)}%`}
+            sub="Data enrichment"
+          />
+        </Grid>
+      </Grid>
 
-        <Paper
-          elevation={0}
+      {/* Secondary KPIs */}
+      <Grid container spacing={2} mb={3}>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard label="Enriched" value={totalEnriched} />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Drafted"
+            value={analytics?.companies_by_status?.drafted ?? 0}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Awaiting Approval"
+            value={analytics?.companies_by_status?.approved ?? 0}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            label="Errors"
+            value={analytics?.companies_by_status?.error ?? 0}
+            deltaTone="red"
+          />
+        </Grid>
+      </Grid>
+
+      {/* Recently sent table */}
+      <Box
+        sx={{
+          border: `1px solid ${colors.border}`,
+          borderRadius: 1.75,
+          overflow: "hidden",
+          bgcolor: colors.bgElev,
+        }}
+      >
+        <Box
           sx={{
-            borderRadius: 3,
-            overflow: "hidden",
-            border: "1px solid",
-            borderColor: "divider",
+            px: 3,
+            py: 2,
+            borderBottom: `1px solid ${colors.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          <Box
-            sx={{
-              p: 3,
-              bgcolor: "white",
-              borderBottom: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              flexWrap="wrap"
-              gap={2}
-            >
-              <Box>
-                <Typography variant="h6" fontWeight={700} gutterBottom>
-                  Recently Sent Emails
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Latest {Math.min(recentlySent.length, 50)} outreach emails
-                </Typography>
-              </Box>
-              <Button
-                variant="outlined"
-                endIcon={<ArrowForward />}
-                onClick={onShowHistory}
-                sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
-              >
-                View All ({sentData?.total ?? 0})
-              </Button>
-            </Box>
+          <Box>
+            <Typography variant="h4">Recently Sent Emails</Typography>
+            <Typography variant="body2">
+              Latest {Math.min(recentlySent.length, 50)} outreach emails
+            </Typography>
           </Box>
+          <Button
+            variant="outlined"
+            endIcon={<ArrowForward />}
+            onClick={onShowHistory}
+            size="small"
+          >
+            View All ({sentData?.total ?? 0})
+          </Button>
+        </Box>
 
-          <TableContainer sx={{ bgcolor: "white" }}>
-            <Table>
+        {recentlySent.length === 0 ? (
+          <EmptyState
+            icon={<Email />}
+            tone="brand"
+            title="No emails sent yet"
+            description="Start a broadcast campaign to see your outreach history here."
+          />
+        ) : (
+          <TableContainer>
+            <Table size="small">
               <TableHead>
                 <TableRow
                   sx={{
-                    bgcolor: "grey.50",
                     "& th": {
-                      fontWeight: 700,
-                      fontSize: "0.75rem",
+                      bgcolor: colors.bgSunken,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      letterSpacing: "0.04em",
                       textTransform: "uppercase",
-                      letterSpacing: 0.5,
-                      color: "text.secondary",
-                      py: 2,
+                      color: colors.ink3,
                     },
                   }}
                 >
@@ -360,127 +190,59 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {recentlySent.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
-                      <Box>
-                        <Email
-                          sx={{ fontSize: 48, color: "text.disabled", mb: 2 }}
-                        />
-                        <Typography color="text.secondary" fontWeight={500}>
-                          No emails sent yet
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          mt={1}
-                        >
-                          Start a campaign to see your sent emails here
-                        </Typography>
-                      </Box>
+                {recentlySent.map((lead) => (
+                  <TableRow key={lead.id} hover sx={{ "& td": { py: 1.5 } }}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={500}>
+                        {lead.name}
+                      </Typography>
+                      <Typography variant="caption" sx={{ display: "block" }}>
+                        {lead.website}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {lead.recipient_name || "—"}
+                      </Typography>
+                      <Typography variant="caption" sx={{ display: "block" }}>
+                        {lead.recipient_email || "—"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 280 }}>
+                      <Typography
+                        variant="body2"
+                        noWrap
+                        title={lead.subject ?? ""}
+                      >
+                        {lead.subject || "—"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" noWrap>
+                        {lead.sent_at
+                          ? new Date(lead.sent_at).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <StatusChip
+                        tone={lead.opened_at ? "green" : "brand"}
+                        dot
+                        label={lead.opened_at ? "Opened" : "Sent"}
+                      />
                     </TableCell>
                   </TableRow>
-                ) : (
-                  recentlySent.map((lead) => (
-                    <TableRow
-                      key={lead.id}
-                      hover
-                      sx={{
-                        "&:hover": {
-                          bgcolor: alpha(theme.palette.primary.main, 0.02),
-                        },
-                        "& td": { py: 2 },
-                      }}
-                    >
-                      <TableCell>
-                        <Box>
-                          <Typography variant="body2" fontWeight={600}>
-                            {lead.name}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: "block", mt: 0.25 }}
-                          >
-                            {lead.website}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box>
-                          <Typography variant="body2" fontWeight={500}>
-                            {lead.recipient_name || "—"}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: "block", mt: 0.25 }}
-                          >
-                            {lead.recipient_email || "—"}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell sx={{ maxWidth: 300 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                          title={lead.subject ?? ""}
-                        >
-                          {lead.subject || "—"}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          noWrap
-                        >
-                          {lead.sent_at
-                            ? new Date(lead.sent_at).toLocaleDateString(
-                                "en-US",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )
-                            : "—"}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        {lead.opened_at ? (
-                          <Chip
-                            label="Opened"
-                            size="small"
-                            sx={{
-                              bgcolor: alpha("#2e7d32", 0.1),
-                              color: "#2e7d32",
-                              fontWeight: 600,
-                              fontSize: "0.75rem",
-                            }}
-                          />
-                        ) : (
-                          <Chip
-                            label="Sent"
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontWeight: 600, fontSize: "0.75rem" }}
-                          />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
-        </Paper>
-      </Container>
+        )}
+      </Box>
     </Box>
   );
 };

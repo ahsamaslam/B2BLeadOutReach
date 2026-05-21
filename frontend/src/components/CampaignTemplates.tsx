@@ -6,7 +6,6 @@ import {
   CardActions,
   CardContent,
   Chip,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -16,9 +15,9 @@ import {
   TextField,
   Tooltip,
   Typography,
-  alpha,
-  useTheme,
 } from "@mui/material";
+import { PageHeader, EmptyState } from "./primitives";
+import { colors } from "../theme/tokens";
 import {
   Add,
   Delete,
@@ -59,7 +58,6 @@ const EMPTY_FORM = {
 };
 
 const CampaignTemplates: React.FC = () => {
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<CampaignTemplate | null>(null);
@@ -147,76 +145,32 @@ const CampaignTemplates: React.FC = () => {
     );
 
   return (
-    <Box sx={{ bgcolor: "grey.50", minHeight: "100vh", py: 4 }}>
-      <Container maxWidth="xl">
-        {/* Header */}
-        <Box mb={4}>
-          <Box display="flex" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2}>
-            <Box>
-              <Typography
-                variant="h4"
-                fontWeight={800}
-                gutterBottom
-                sx={{
-                  background: "linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)",
-                  backgroundClip: "text",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                Campaign Templates
-              </Typography>
-              <Typography variant="body1" color="text.secondary" maxWidth={600}>
-                Create reusable email templates. AI will personalize each one when sending to your leads.
-              </Typography>
-            </Box>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<Add />}
-              onClick={() => handleOpen()}
-              sx={{
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: 600,
-                px: 3,
-                py: 1.5,
-                boxShadow: theme.shadows[4],
-                "&:hover": { boxShadow: theme.shadows[8] },
-              }}
-            >
-              New Template
-            </Button>
-          </Box>
-        </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Campaign Templates"
+        description="Reusable email templates. AI personalizes each one when sending to your leads."
+        actions={
+          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpen()}>
+            New Template
+          </Button>
+        }
+      />
 
-        {/* Empty State */}
-        {templates.length === 0 && (
-          <Card
-            sx={{
-              textAlign: "center",
-              py: 8,
-              bgcolor: "white",
-              borderRadius: 3,
-              border: "2px dashed",
-              borderColor: "divider",
-            }}
-          >
-            <Email sx={{ fontSize: 64, color: "text.disabled", mb: 2 }} />
-            <Typography variant="h6" fontWeight={600} gutterBottom>No templates yet</Typography>
-            <Typography color="text.secondary" mb={3}>
-              Create your first campaign template to start sending personalized outreach emails
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => handleOpen()}
-              sx={{ textTransform: "none", fontWeight: 600 }}
-            >
+      {/* Empty State */}
+      {templates.length === 0 && (
+        <EmptyState
+          icon={<Email />}
+          tone="brand"
+          title="No templates yet"
+          description="Create your first campaign template to start sending personalized outreach emails."
+          primaryAction={
+            <Button variant="contained" startIcon={<Add />} onClick={() => handleOpen()}>
               Create First Template
             </Button>
-          </Card>
-        )}
+          }
+        />
+      )}
 
         {/* Template Grid */}
         <Grid container spacing={3}>
@@ -227,65 +181,30 @@ const CampaignTemplates: React.FC = () => {
                   height: "100%",
                   display: "flex",
                   flexDirection: "column",
-                  borderRadius: 3,
-                  border: "1px solid",
-                  borderColor: "divider",
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  position: "relative",
-                  overflow: "hidden",
-                  bgcolor: "white",
+                  border: `1px solid ${colors.border}`,
+                  bgcolor: colors.bgElev,
                   "&:hover": {
-                    transform: "translateY(-4px)",
-                    boxShadow: theme.shadows[8],
-                    borderColor: "primary.main",
+                    borderColor: colors.brand,
                     "& .action-buttons": { opacity: 1 },
                   },
                 }}
               >
-                {/* Gradient top bar */}
-                <Box
-                  sx={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 4,
-                    background: "linear-gradient(90deg, #1976d2 0%, #42a5f5 100%)",
-                  }}
-                />
-
-                <CardContent sx={{ flex: 1, pt: 3 }}>
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                    gutterBottom
-                    sx={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                      mb: 2,
-                    }}
-                  >
+                <CardContent sx={{ flex: 1 }}>
+                  <Typography variant="h5" gutterBottom sx={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", mb: 2 }}>
                     {tmpl.name}
                   </Typography>
-
                   {/* Subject */}
                   <Box
                     sx={{
-                      mb: 2,
-                      p: 1.5,
-                      bgcolor: alpha(theme.palette.primary.main, 0.04),
-                      borderRadius: 1.5,
-                      borderLeft: "3px solid",
-                      borderColor: "primary.main",
+                      mb: 2, p: 1.5,
+                      bgcolor: colors.brandSoft,
+                      borderRadius: 1,
+                      borderLeft: `3px solid ${colors.brand}`,
                     }}
                   >
                     <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                      <Email sx={{ fontSize: 16, color: "primary.main" }} />
-                      <Typography variant="caption" fontWeight={700} color="primary.main" textTransform="uppercase" letterSpacing={0.5}>
-                        Subject
-                      </Typography>
+                      <Email sx={{ fontSize: 16, color: colors.brand }} />
+                      <Typography variant="overline">Subject</Typography>
                     </Box>
                     <Typography
                       variant="body2"
@@ -324,17 +243,14 @@ const CampaignTemplates: React.FC = () => {
                     <Box
                       sx={{
                         p: 1.5,
-                        bgcolor: alpha(theme.palette.success.main, 0.04),
-                        borderRadius: 1.5,
-                        borderLeft: "3px solid",
-                        borderColor: "success.main",
+                        bgcolor: colors.greenSoft,
+                        borderRadius: 1,
+                        borderLeft: `3px solid ${colors.green}`,
                       }}
                     >
                       <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                        <SmartToy sx={{ fontSize: 16, color: "success.main" }} />
-                        <Typography variant="caption" fontWeight={700} color="success.main" textTransform="uppercase" letterSpacing={0.5}>
-                          AI Instructions
-                        </Typography>
+                        <SmartToy sx={{ fontSize: 16, color: colors.green }} />
+                        <Typography variant="overline">AI Instructions</Typography>
                       </Box>
                       <Typography
                         variant="body2"
@@ -349,21 +265,11 @@ const CampaignTemplates: React.FC = () => {
 
                 <CardActions
                   className="action-buttons"
-                  sx={{
-                    justifyContent: "flex-end",
-                    p: 2,
-                    pt: 0,
-                    opacity: 0.7,
-                    transition: "opacity 0.2s",
-                  }}
+                  sx={{ justifyContent: "flex-end", p: 2, pt: 0, opacity: 0.7, transition: "opacity 0.2s" }}
                 >
                   <Tooltip title="Edit template">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpen(tmpl)}
-                      sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.16) } }}
-                    >
-                      <Edit fontSize="small" color="primary" />
+                    <IconButton size="small" onClick={() => handleOpen(tmpl)}>
+                      <Edit fontSize="small" />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Delete template">
@@ -374,9 +280,8 @@ const CampaignTemplates: React.FC = () => {
                           deleteMutation.mutate(tmpl.id);
                         }
                       }}
-                      sx={{ bgcolor: alpha(theme.palette.error.main, 0.08), "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.16) } }}
                     >
-                      <Delete fontSize="small" color="error" />
+                      <Delete fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 </CardActions>
@@ -386,7 +291,7 @@ const CampaignTemplates: React.FC = () => {
         </Grid>
 
         {/* Create / Edit Dialog */}
-        <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
           <DialogTitle sx={{ pb: 2, borderBottom: "1px solid", borderColor: "divider" }}>
             <Typography variant="h6" fontWeight={700}>
               {editTarget ? "Edit Template" : "New Campaign Template"}
@@ -426,16 +331,10 @@ const CampaignTemplates: React.FC = () => {
                     <Chip
                       key={ph}
                       label={ph}
-                      size="medium"
+                      size="small"
                       clickable
-                      icon={<ContentCopy sx={{ fontSize: 16 }} />}
+                      icon={<ContentCopy sx={{ fontSize: 14 }} />}
                       onClick={() => insertPlaceholder(ph)}
-                      sx={{
-                        borderRadius: 2,
-                        fontWeight: 600,
-                        fontSize: "0.8rem",
-                        "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.12) },
-                      }}
                     />
                   ))}
                 </Box>
@@ -467,21 +366,18 @@ const CampaignTemplates: React.FC = () => {
             </Box>
           </DialogContent>
 
-          <DialogActions sx={{ p: 3, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
-            <Button onClick={handleClose} sx={{ textTransform: "none", fontWeight: 600 }}>
-              Cancel
-            </Button>
+          <DialogActions sx={{ p: 3, pt: 2, borderTop: `1px solid ${colors.border}` }}>
+            <Button onClick={handleClose}>Cancel</Button>
             <Button
               variant="contained"
               onClick={handleSave}
               disabled={createMutation.isPending || updateMutation.isPending}
-              sx={{ textTransform: "none", fontWeight: 600, px: 3, borderRadius: 2 }}
             >
               {editTarget ? "Save Changes" : "Create Template"}
             </Button>
           </DialogActions>
         </Dialog>
-      </Container>
+      </Box>
     </Box>
   );
 };
