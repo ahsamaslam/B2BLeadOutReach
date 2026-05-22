@@ -184,10 +184,16 @@ class UserResponse(BaseModel):
     is_active: bool
     is_admin: bool = False
     tenant_id: Optional[int] = None
+    must_change_password: bool = False
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
 
 
 class TokenResponse(BaseModel):
@@ -203,6 +209,8 @@ class CampaignTemplateBase(BaseModel):
     body_template: str = Field(..., min_length=1)
     instructions: Optional[str] = None
     attach_portfolio: bool = False
+    tags: Optional[str] = None       # JSON string, e.g. '["Cold outreach","AI"]'
+    is_default: bool = False
 
 class CampaignTemplateCreate(CampaignTemplateBase):
     pass
@@ -213,11 +221,16 @@ class CampaignTemplateUpdate(BaseModel):
     body_template: Optional[str] = None
     instructions: Optional[str] = None
     attach_portfolio: Optional[bool] = None
+    tags: Optional[str] = None
+    is_default: Optional[bool] = None
 
 class CampaignTemplateResponse(CampaignTemplateBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    sent_count: int = 0
+    open_rate: float = 0.0
+    reply_rate: float = 0.0
 
     class Config:
         from_attributes = True

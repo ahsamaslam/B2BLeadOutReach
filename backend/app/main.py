@@ -34,6 +34,20 @@ def _run_migrations():
             # Campaign templates: keep older DB schemas in sync with model
             "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS instructions TEXT",
             "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS attach_portfolio BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS tags TEXT",
+            "ALTER TABLE campaign_templates ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE",
+            # Email logs: link to campaign template for stats
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS campaign_template_id INTEGER REFERENCES campaign_templates(id) ON DELETE SET NULL",
+            # Team / tenant user fields
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'member'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)",
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_email VARCHAR(255)",
+            # Force password reset on first invite login
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
+            # Default / protected workspace flag
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE",
+            # Per-tenant email tracking
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS tenant_id INTEGER REFERENCES tenants(id) ON DELETE SET NULL",
             # Follow-up automation table
             """
             CREATE TABLE IF NOT EXISTS follow_up_logs (
@@ -65,7 +79,96 @@ def _run_migrations():
 
 _run_migrations()
 
-# Ensure upload folder exists
+# ── Seed super-admin from env vars ────────────────────────────────────────────
+def _seed_super_admin():
+    """
+    Ensure the super-admin user defined in SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD
+    exists in the DB and has is_admin=True.  Runs every startup — safe to re-run.
+    """
+    if not settings.SUPER_ADMIN_EMAIL or not settings.SUPER_ADMIN_PASSWORD:
+        return  # env vars not set — skip
+    from app.database import SessionLocal
+    from app.services.auth_service import get_password_hash
+    import logging
+    _log = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        from app.models import User
+        user = db.query(User).filter(User.email == settings.SUPER_ADMIN_EMAIL).first()
+        if user:
+            changed = False
+            if not user.is_admin:
+                user.is_admin = True
+                changed = True
+            # Always re-hash password so a .env change takes effect on restart
+            from app.services.auth_service import verify_password
+            if not verify_password(settings.SUPER_ADMIN_PASSWORD, user.hashed_password):
+                user.hashed_password = get_password_hash(settings.SUPER_ADMIN_PASSWORD)
+                changed = True
+            if changed:
+                db.commit()
+                _log.info("Super-admin updated: %s", settings.SUPER_ADMIN_EMAIL)
+        else:
+            new_admin = User(
+                email=settings.SUPER_ADMIN_EMAIL,
+                hashed_password=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
+                is_active=True,
+                is_admin=True,
+                role="owner",
+            )
+            db.add(new_admin)
+            db.commit()
+            _log.info("Super-admin created: %s", settings.SUPER_ADMIN_EMAIL)
+    except Exception as exc:
+        import logging as _l
+        _l.getLogger(__name__).error("Super-admin seed failed: %s", exc)
+    finally:
+        db.close()
+
+_seed_super_admin()
+
+
+# ── Seed default (protected) workspace ────────────────────────────────────────
+def _seed_default_workspace():
+    """
+    Ensure exactly one Tenant with is_default=True exists.
+    The super-admin is attached to it if they have no tenant yet.
+    Runs every startup — safe to re-run.
+    """
+    from app.database import SessionLocal
+    import logging
+    _log = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        from app.models import Tenant, User
+        default_tenant = db.query(Tenant).filter(Tenant.is_default == True).first()
+        if not default_tenant:
+            default_tenant = Tenant(
+                name="Default Workspace",
+                plan="enterprise",
+                is_active=True,
+                is_default=True,
+            )
+            db.add(default_tenant)
+            db.flush()
+            _log.info("Default workspace created (id=%s)", default_tenant.id)
+        # Attach super-admin to the default workspace if they aren't in any tenant
+        if settings.SUPER_ADMIN_EMAIL:
+            admin_user = db.query(User).filter(User.email == settings.SUPER_ADMIN_EMAIL).first()
+            if admin_user and admin_user.tenant_id is None:
+                admin_user.tenant_id = default_tenant.id
+                admin_user.role = "owner"
+                default_tenant.owner_email = admin_user.email
+        db.commit()
+    except Exception as exc:
+        import logging as _l
+        _l.getLogger(__name__).error("Default workspace seed failed: %s", exc)
+    finally:
+        db.close()
+
+_seed_default_workspace()
+
+
 Path("/app/uploads/portfolio").mkdir(parents=True, exist_ok=True)
 
 # Initialize FastAPI app

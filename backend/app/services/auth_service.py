@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.config import settings
-from app.models import User
+from app.models import User, Tenant
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -24,6 +24,24 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def _check_user_active(db: Session, user: User) -> None:
+    """Raise 403 if the user or their tenant is suspended. Super-admins bypass this."""
+    if user.is_admin:
+        return  # super-admins are never blocked
+    if not bool(user.is_active):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been suspended",
+        )
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not bool(tenant.is_active):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This workspace has been suspended",
+            )
+
+
 def authenticate_user(db: Session, email: str, password: str) -> User:
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.hashed_password):
@@ -31,11 +49,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    if not bool(user.is_active):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User account is inactive",
-        )
+    _check_user_active(db, user)
     return user
 
 
@@ -56,4 +70,5 @@ def get_current_user_from_token(db: Session, token: str) -> User:
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
+    _check_user_active(db, user)
     return user

@@ -33,7 +33,7 @@ axiosInstance.interceptors.response.use(
       window.location.reload();
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export const api = {
@@ -61,8 +61,17 @@ export const api = {
       is_active: boolean;
       is_admin: boolean;
       tenant_id: number | null;
+      must_change_password: boolean;
       created_at: string;
     };
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const response = await axiosInstance.post("/api/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data as { message: string };
   },
 
   // Companies
@@ -83,10 +92,35 @@ export const api = {
     const response = await axiosInstance.post("/api/companies/manual", payload);
     return response.data;
   },
-  getCompanies: async (status?: string) => {
-    const params = status ? { status } : {};
+  getCompanies: async (filters?: {
+    status?: string;
+    search?: string;
+    niche?: string;
+    location?: string;
+    business_type?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const params: Record<string, any> = {};
+    if (filters?.status) params.status = filters.status;
+    if (filters?.search) params.search = filters.search;
+    if (filters?.niche) params.niche = filters.niche;
+    if (filters?.location) params.location = filters.location;
+    if (filters?.business_type) params.business_type = filters.business_type;
+    if (filters?.limit) params.limit = filters.limit;
+    if (filters?.offset) params.offset = filters.offset;
     const response = await axiosInstance.get("/api/companies", { params });
     return response.data;
+  },
+
+  getCompanyStats: async () => {
+    const response = await axiosInstance.get("/api/companies/stats");
+    return response.data as {
+      total: number;
+      enriched: number;
+      pending: number;
+      errors: number;
+    };
   },
 
   getCompany: async (id: number) => {
@@ -205,6 +239,65 @@ export const api = {
     return response.data;
   },
 
+  getDashboardV2: async (period = "30d") => {
+    const response = await axiosInstance.get("/api/analytics/dashboard-v2", {
+      params: { period },
+    });
+    return response.data as {
+      stats: {
+        leads_in_pipeline: {
+          value: number;
+          delta_label: string;
+          delta_tone: string;
+          sub: string;
+        };
+        emails_sent: {
+          value: number;
+          delta_label: string;
+          delta_tone: string;
+          sub: string;
+        };
+        open_rate: {
+          value: number;
+          delta_label: string;
+          delta_tone: string;
+          sub: string;
+        };
+        replies: {
+          value: number;
+          delta_label: string;
+          delta_tone: string;
+          sub: string;
+        };
+      };
+      funnel: Array<{
+        stage: string;
+        count: number;
+        pct: number;
+        color: string;
+      }>;
+      activity: Array<{
+        type: string;
+        title: string;
+        detail: string;
+        ago: string;
+      }>;
+      recent_sent: Array<{
+        id: number;
+        initials: string;
+        company_name: string;
+        company_website: string;
+        recipient_name: string;
+        recipient_email: string;
+        subject: string;
+        niche: string;
+        sent_ago: string;
+        status: "opened" | "sent";
+      }>;
+      total_sent: number;
+    };
+  },
+
   getStatusDistribution: async () => {
     const response = await axiosInstance.get(
       "/api/analytics/status-distribution",
@@ -231,11 +324,6 @@ export const api = {
 
   deletePortfolio: async (storedName: string) => {
     const response = await axiosInstance.delete(`/api/portfolio/${storedName}`);
-    return response.data;
-  },
-
-  testSmtp: async () => {
-    const response = await axiosInstance.post("/api/emails/test-smtp");
     return response.data;
   },
 
@@ -280,6 +368,8 @@ export const api = {
     body_template: string;
     instructions?: string;
     attach_portfolio?: boolean;
+    tags?: string;
+    is_default?: boolean;
   }) => {
     const response = await axiosInstance.post(
       "/api/emails/campaign-templates",
@@ -296,6 +386,8 @@ export const api = {
       body_template: string;
       instructions: string;
       attach_portfolio: boolean;
+      tags: string;
+      is_default: boolean;
     }>,
   ) => {
     const response = await axiosInstance.put(
@@ -303,6 +395,24 @@ export const api = {
       payload,
     );
     return response.data;
+  },
+
+  duplicateCampaignTemplate: async (id: number) => {
+    const response = await axiosInstance.post(
+      `/api/emails/campaign-templates/${id}/duplicate`,
+    );
+    return response.data;
+  },
+
+  previewCampaignTemplate: async (id: number) => {
+    const response = await axiosInstance.post(
+      `/api/emails/campaign-templates/${id}/preview`,
+    );
+    return response.data as {
+      subject: string;
+      body: string;
+      sample: Record<string, string>;
+    };
   },
 
   deleteCampaignTemplate: async (id: number) => {
@@ -342,6 +452,28 @@ export const api = {
     return response.data;
   },
 
+  testSmtp: async () => {
+    const response = await axiosInstance.post("/api/settings/test-smtp");
+    return response.data as {
+      success: boolean;
+      message: string;
+      latency_ms: number;
+      tested_at: string;
+      tested_email: string;
+    };
+  },
+
+  getSmtpStatus: async () => {
+    const response = await axiosInstance.get("/api/settings/smtp-status");
+    return response.data as {
+      success: boolean | null;
+      message: string | null;
+      latency_ms: number | null;
+      tested_at: string | null;
+      tested_email: string | null;
+    };
+  },
+
   // Admin
   adminMe: async () => {
     const response = await axiosInstance.get("/api/admin/me");
@@ -353,22 +485,192 @@ export const api = {
     };
   },
 
-  adminListTenants: async () => {
-    const response = await axiosInstance.get("/api/admin/tenants");
-    return response.data as Array<{
+  adminGetStats: async () => {
+    const response = await axiosInstance.get("/api/admin/stats");
+    return response.data as {
+      total_tenants: number;
+      active_tenants: number;
+      suspended_tenants: number;
+      mrr: number;
+      emails_24h: number;
+      open_trials: number;
+    };
+  },
+
+  getUsage: async () => {
+    const response = await axiosInstance.get("/api/analytics/usage");
+    return response.data as {
+      sent: number;
+      cap: number | null;
+      plan: string;
+      plan_label: string;
+      tenant_name: string;
+    };
+  },
+
+  adminListTenants: async (params?: {
+    q?: string;
+    plan?: string;
+    status?: string;
+    created_range?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await axiosInstance.get("/api/admin/tenants", { params });
+    return response.data as {
+      items: Array<{
+        id: number;
+        name: string;
+        plan: string;
+        is_active: boolean;
+        owner_email: string;
+        user_count: number;
+        emails_this_month: number;
+        leads_count: number;
+        created_at: string;
+      }>;
+      total: number;
+      page: number;
+      page_size: number;
+      pages: number;
+    };
+  },
+
+  adminCreateTenant: async (payload: {
+    name: string;
+    owner_email: string;
+    plan: string;
+  }) => {
+    const response = await axiosInstance.post("/api/admin/tenants", payload);
+    return response.data as {
       id: number;
       name: string;
       plan: string;
-      is_active: boolean;
-      user_count: number;
+      owner_email: string;
       created_at: string;
-    }>;
+      temp_password: string | null;
+    };
   },
 
   adminUpdatePlan: async (tenantId: number, plan: string) => {
     const response = await axiosInstance.put(
       `/api/admin/tenants/${tenantId}/plan`,
       { plan },
+    );
+    return response.data;
+  },
+
+  adminSuspendTenant: async (tenantId: number) => {
+    const response = await axiosInstance.put(
+      `/api/admin/tenants/${tenantId}/suspend`,
+    );
+    return response.data;
+  },
+
+  adminReactivateTenant: async (tenantId: number) => {
+    const response = await axiosInstance.put(
+      `/api/admin/tenants/${tenantId}/reactivate`,
+    );
+    return response.data;
+  },
+
+  adminDeleteTenant: async (tenantId: number) => {
+    const response = await axiosInstance.delete(
+      `/api/admin/tenants/${tenantId}`,
+    );
+    return response.data;
+  },
+
+  adminGetTenantUsers: async (tenantId: number) => {
+    const response = await axiosInstance.get(
+      `/api/admin/tenants/${tenantId}/users`,
+    );
+    return response.data as Array<{
+      id: number;
+      email: string;
+      display_name: string;
+      role: string;
+      is_admin: boolean;
+      created_at: string;
+    }>;
+  },
+
+  adminAddTenantUser: async (
+    tenantId: number,
+    payload: { email: string; role: string; display_name?: string },
+  ) => {
+    const response = await axiosInstance.post(
+      `/api/admin/tenants/${tenantId}/users`,
+      payload,
+    );
+    return response.data as {
+      id: number;
+      email: string;
+      role: string;
+      temp_password: string | null;
+    };
+  },
+
+  adminRemoveTenantUser: async (tenantId: number, userId: number) => {
+    const response = await axiosInstance.delete(
+      `/api/admin/tenants/${tenantId}/users/${userId}`,
+    );
+    return response.data;
+  },
+
+  adminResendInvite: async (tenantId: number) => {
+    const response = await axiosInstance.post(
+      `/api/admin/tenants/${tenantId}/resend-invite`,
+    );
+    return response.data as { status: string; owner_email: string };
+  },
+
+  // Team management (settings)
+  getTeamMembers: async () => {
+    const response = await axiosInstance.get("/api/settings/team");
+    return response.data as Array<{
+      id: number;
+      email: string;
+      display_name: string;
+      role: string;
+      is_admin: boolean;
+      created_at: string;
+    }>;
+  },
+
+  inviteTeamMember: async (payload: {
+    email: string;
+    role: string;
+    display_name?: string;
+  }) => {
+    const response = await axiosInstance.post(
+      "/api/settings/team/invite",
+      payload,
+    );
+    return response.data as {
+      id: number;
+      email: string;
+      role: string;
+      temp_password: string | null;
+    };
+  },
+
+  removeTeamMember: async (userId: number) => {
+    const response = await axiosInstance.delete(`/api/settings/team/${userId}`);
+    return response.data;
+  },
+
+  resendTeamMemberInvite: async (userId: number) => {
+    const response = await axiosInstance.post(
+      `/api/settings/team/${userId}/resend-invite`,
+    );
+    return response.data;
+  },
+
+  updateTeamMemberRole: async (userId: number, role: string) => {
+    const response = await axiosInstance.put(
+      `/api/settings/team/${userId}/role`,
+      { role },
     );
     return response.data;
   },
@@ -479,5 +781,146 @@ export const api = {
       open_count: number;
       error_message: string | null;
     }>;
+  },
+
+  // ── Broadcast ──────────────────────────────────────────────────────────────
+
+  broadcastGenerate: async (payload: {
+    company_ids: number[];
+    campaign_template_id: number;
+    attach_portfolio?: boolean;
+    use_ai?: boolean;
+  }) => {
+    const response = await axiosInstance.post(
+      "/api/emails/broadcast/generate",
+      payload,
+    );
+    return response.data as {
+      generated: number;
+      results: Array<{
+        company_id: number;
+        template_id: number;
+        company_name: string;
+        domain: string;
+        niche: string;
+        location: string;
+        contact_name: string;
+        contact_email: string;
+        status: string;
+        subject: string;
+        body: string;
+        filled_vars: Record<string, string>;
+      }>;
+    };
+  },
+
+  broadcastGetDrafts: async (companyIds: number[]) => {
+    const response = await axiosInstance.get("/api/emails/broadcast/drafts", {
+      params: { company_ids: companyIds.join(",") },
+    });
+    return response.data as Array<{
+      company_id: number;
+      company_name: string;
+      domain: string;
+      niche: string;
+      location: string;
+      contact_name: string;
+      contact_email: string;
+      template_id: number | null;
+      status: string;
+      subject: string;
+      body: string;
+      filled_vars: Record<string, string>;
+    }>;
+  },
+
+  rejectEmailTemplate: async (templateId: number) => {
+    const response = await axiosInstance.post(
+      `/api/emails/templates/${templateId}/reject`,
+    );
+    return response.data as { id: number; status: string };
+  },
+
+  broadcastSendApproved: async (payload: {
+    template_ids: number[];
+    attach_portfolio?: boolean;
+  }) => {
+    const response = await axiosInstance.post(
+      "/api/emails/broadcast/send-approved",
+      payload,
+    );
+    return response.data as { sent: number; failed: number; errors: string[] };
+  },
+
+  // ── Sent History ──────────────────────────────────────────────────────────
+
+  getHistoryStats: async () => {
+    const response = await axiosInstance.get("/api/emails/history/stats");
+    return response.data as {
+      total_sent: number;
+      this_week: number;
+      last_week: number;
+      delta_week: number;
+      opened: number;
+      open_rate: number;
+      replied: number;
+      reply_rate: number;
+      bounced: number;
+      window_label: string;
+    };
+  },
+
+  getHistoryChart: async (days = 14) => {
+    const response = await axiosInstance.get("/api/emails/history/chart", {
+      params: { days },
+    });
+    return response.data as Array<{
+      date: string;
+      sent: number;
+      opened: number;
+    }>;
+  },
+
+  getHistory: async (params: {
+    q?: string;
+    status?: string;
+    date_range?: string;
+    niche?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await axiosInstance.get("/api/emails/history", { params });
+    return response.data as {
+      items: Array<{
+        id: number;
+        company_id: number;
+        company_name: string;
+        company_domain: string;
+        niche: string | null;
+        location: string | null;
+        recipient_name: string | null;
+        recipient_email: string;
+        subject: string;
+        status: string;
+        sent_at: string | null;
+        opened_at: string | null;
+        open_count: number;
+        replied_at: string | null;
+        error_message: string | null;
+      }>;
+      total: number;
+      page: number;
+      page_size: number;
+      pages: number;
+    };
+  },
+
+  deleteEmailLog: async (logId: number) => {
+    await axiosInstance.delete(`/api/emails/logs/${logId}`);
+  },
+
+  getHistoryNiches: async () => {
+    const response = await axiosInstance.get("/api/emails/history/niches");
+    return response.data as string[];
   },
 };

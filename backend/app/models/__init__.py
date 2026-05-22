@@ -15,6 +15,8 @@ class Tenant(Base):
     plan = Column(String(50), default="free", index=True)
     # plan values: free | starter | professional | enterprise
     is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)   # protected workspace — cannot be deleted or suspended
+    owner_email = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     users = relationship("User", back_populates="tenant")
@@ -137,7 +139,9 @@ class EmailLog(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     template_id = Column(Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
+    campaign_template_id = Column(Integer, ForeignKey("campaign_templates.id", ondelete="SET NULL"), nullable=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True)
     
     recipient_email = Column(String(255), nullable=False)
     recipient_name = Column(String(255), nullable=True)
@@ -162,6 +166,7 @@ class EmailLog(Base):
     
     # Relationships
     template = relationship("EmailTemplate", back_populates="email_logs")
+    campaign_template = relationship("CampaignTemplate", back_populates="email_logs", foreign_keys=[campaign_template_id])
     company = relationship("Company", back_populates="email_logs")
     follow_up_logs = relationship("FollowUpLog", back_populates="parent_log", cascade="all, delete-orphan")
 
@@ -227,9 +232,13 @@ class CampaignTemplate(Base):
     # Supported placeholders: {{company_name}}, {{owner_name}}, {{address}}, {{niche}}, {{location}}
     instructions = Column(Text, nullable=True)
     attach_portfolio = Column(Boolean, default=False)
+    tags = Column(Text, nullable=True)        # JSON array stored as text, e.g. '["Cold outreach","AI"]'
+    is_default = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_logs = relationship("EmailLog", back_populates="campaign_template")
 
 
 class ScrapingTask(Base):
@@ -262,8 +271,11 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
+    display_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)  # platform-wide admin
+    role = Column(String(50), default="member")  # owner | admin | member (within tenant)
+    must_change_password = Column(Boolean, default=False)  # force password reset on first login
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

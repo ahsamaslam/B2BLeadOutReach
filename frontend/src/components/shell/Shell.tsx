@@ -15,6 +15,8 @@ interface ShellProps extends SidebarProps {
   children: React.ReactNode;
   /** Remove the default 28px padding around children (split-view screens). */
   flush?: boolean;
+  /** Badge count on the Tenants sidebar item. */
+  adminTenantCount?: number;
 }
 
 /**
@@ -38,11 +40,27 @@ interface ShellProps extends SidebarProps {
  *   </Shell>
  */
 export const Shell: React.FC<ShellProps> = ({
-  crumb, topBarActions, hideSearch, children, flush, ...sidebarProps
+  crumb,
+  topBarActions,
+  hideSearch,
+  children,
+  flush,
+  adminTenantCount,
+  ...sidebarProps
 }) => (
-  <Box sx={{ display: "flex", width: "100%", height: "100vh", bgcolor: colors.bg }}>
-    <Sidebar {...sidebarProps} />
-    <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, bgcolor: colors.bg }}>
+  <Box
+    sx={{ display: "flex", width: "100%", height: "100vh", bgcolor: colors.bg }}
+  >
+    <Sidebar {...sidebarProps} adminTenantCount={adminTenantCount} />
+    <Box
+      sx={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        minWidth: 0,
+        bgcolor: colors.bg,
+      }}
+    >
       <TopBar crumb={crumb} actions={topBarActions} hideSearch={hideSearch} />
       <Box sx={{ flex: 1, overflow: "auto", p: flush ? 0 : 3.5 }}>
         {children}

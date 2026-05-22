@@ -1,4 +1,4 @@
-﻿import React, { useLayoutEffect, useMemo, useState } from "react";
+import React, { useLayoutEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -152,6 +152,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
   const [reviewLeadId, setReviewLeadId] = useState<number | null>(null);
 
   // â”€â”€ Hydrate from storage when switching to this tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const st = location.state as Partial<BroadcastLocationState> | null;
     let payloads: BroadcastLeadPayload[] | null = null;
@@ -172,6 +173,7 @@ const EmailCampaign: React.FC<EmailCampaignProps> = ({
     setGeneratedEmails([]);
     setSentLeadIds(new Set());
     toast.success(`Loaded ${rows.length} lead(s) for broadcast`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
   // â”€â”€ Queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

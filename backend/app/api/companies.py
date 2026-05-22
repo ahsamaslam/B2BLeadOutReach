@@ -320,15 +320,53 @@ def create_manual_lead(
 @router.get("", response_model=list[CompanyResponse])
 def get_companies(
     status: str | None = None,
+    search: str | None = None,
+    niche: str | None = None,
+    location: str | None = None,
+    business_type: str | None = None,
     limit: int = 200,
     offset: int = 0,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     query = db.query(Company)
-    if status:
+    if status == "enriched":
+        query = query.filter(Company.status.in_(["data_parsed", "drafted", "approved", "sent"]))
+    elif status == "pending":
+        query = query.filter(Company.status.in_(["created", "scraping"]))
+    elif status:
         query = query.filter(Company.status == status)
+    if niche:
+        query = query.filter(Company.niche == niche)
+    if location:
+        query = query.filter(func.lower(Company.location).like(f"%{location.lower()}%"))
+    if business_type:
+        query = query.filter(Company.business_type == business_type)
+    if search:
+        pat = f"%{search.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Company.name).like(pat),
+                func.lower(Company.website).like(pat),
+                func.lower(Company.niche).like(pat),
+                func.lower(Company.location).like(pat),
+            )
+        )
     return query.order_by(Company.created_at.desc()).offset(offset).limit(limit).all()
+
+
+@router.get("/stats")
+def company_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Quick stat counters for the Leads page header."""
+    total    = db.query(func.count(Company.id)).scalar() or 0
+    enriched = db.query(func.count(Company.id)).filter(
+        Company.status.in_(["data_parsed", "drafted", "approved", "sent"])
+    ).scalar() or 0
+    pending  = db.query(func.count(Company.id)).filter(
+        Company.status.in_(["created", "scraping"])
+    ).scalar() or 0
+    errors   = db.query(func.count(Company.id)).filter(Company.status == "error").scalar() or 0
+    return {"total": total, "enriched": enriched, "pending": pending, "errors": errors}
 
 
 # ── /export MUST come before /{company_id} so FastAPI doesn't try to cast "export" as int ──

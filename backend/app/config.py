@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
+
+    # Super Admin — seeded automatically on startup from these env vars
+    SUPER_ADMIN_EMAIL: str = ""
+    SUPER_ADMIN_PASSWORD: str = ""
     
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000"
@@ -55,6 +59,11 @@ class Settings(BaseSettings):
     MY_COMPANY_CONTACT: str = "contact@example.com"
     SENDER_FULL_NAME: str = ""
     TRACKING_BASE_URL: Optional[str] = None
+
+    # Platform system email — used for tenant invitation emails.
+    # Set via PLATFORM_FROM_EMAIL / PLATFORM_FROM_NAME in backend/.env
+    PLATFORM_FROM_EMAIL: str = ""
+    PLATFORM_FROM_NAME: str = "SendMaster"
 
     # Follow-up automation
     FOLLOWUP_ENABLED: bool = False

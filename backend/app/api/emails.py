@@ -5,6 +5,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
@@ -69,6 +70,19 @@ class SendAiEmailItem(BaseModel):
 class SendAiEmailsRequest(BaseModel):
     emails: List[SendAiEmailItem]
     attach_portfolio: bool = False
+
+
+class BroadcastGenerateRequest(BaseModel):
+    company_ids: List[int]
+    campaign_template_id: int
+    attach_portfolio: bool = False
+    use_ai: bool = False
+
+
+class BroadcastSendRequest(BaseModel):
+    template_ids: List[int]
+    attach_portfolio: bool = False
+
 
 router = APIRouter()
 
@@ -264,6 +278,7 @@ def send_approved_emails(
         log = EmailLog(
             template_id=template.id,
             company_id=company.id,
+            tenant_id=current_user.tenant_id,
             recipient_email=recipient,
             recipient_name=primary_contact.name if primary_contact else None,
             subject=template.subject,
@@ -317,12 +332,28 @@ def get_logs(
 # Campaign Template CRUD
 # ─────────────────────────────────────────────
 
+def _template_with_stats(tmpl: CampaignTemplate, db: Session) -> dict:
+    """Attach sent_count, open_rate, reply_rate to a CampaignTemplate row."""
+    logs = db.query(EmailLog).filter(EmailLog.campaign_template_id == tmpl.id).all()
+    sent = len([l for l in logs if l.status == "sent"])
+    opens = len([l for l in logs if l.open_count and l.open_count > 0])
+    replies = len([l for l in logs if l.replied_at is not None])
+    open_rate  = round(opens  / sent * 100, 1) if sent else 0.0
+    reply_rate = round(replies / sent * 100, 1) if sent else 0.0
+    d = {c.key: getattr(tmpl, c.key) for c in tmpl.__table__.columns}
+    d["sent_count"]  = sent
+    d["open_rate"]   = open_rate
+    d["reply_rate"]  = reply_rate
+    return d
+
+
 @router.get("/campaign-templates", response_model=list[CampaignTemplateResponse])
 def list_campaign_templates(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    return db.query(CampaignTemplate).order_by(CampaignTemplate.created_at.desc()).all()
+    templates = db.query(CampaignTemplate).order_by(CampaignTemplate.created_at.desc()).all()
+    return [_template_with_stats(t, db) for t in templates]
 
 
 @router.post("/campaign-templates", response_model=CampaignTemplateResponse, status_code=201)
@@ -335,7 +366,7 @@ def create_campaign_template(
     db.add(tmpl)
     db.commit()
     db.refresh(tmpl)
-    return tmpl
+    return _template_with_stats(tmpl, db)
 
 
 @router.get("/campaign-templates/{template_id}", response_model=CampaignTemplateResponse)
@@ -347,7 +378,7 @@ def get_campaign_template(
     tmpl = db.query(CampaignTemplate).filter(CampaignTemplate.id == template_id).first()
     if not tmpl:
         raise HTTPException(status_code=404, detail="Campaign template not found")
-    return tmpl
+    return _template_with_stats(tmpl, db)
 
 
 @router.put("/campaign-templates/{template_id}", response_model=CampaignTemplateResponse)
@@ -364,7 +395,61 @@ def update_campaign_template(
         setattr(tmpl, key, value)
     db.commit()
     db.refresh(tmpl)
-    return tmpl
+    return _template_with_stats(tmpl, db)
+
+
+@router.post("/campaign-templates/{template_id}/duplicate", response_model=CampaignTemplateResponse, status_code=201)
+def duplicate_campaign_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    src = db.query(CampaignTemplate).filter(CampaignTemplate.id == template_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Campaign template not found")
+    copy = CampaignTemplate(
+        name=f"{src.name} (copy)",
+        subject_template=src.subject_template,
+        body_template=src.body_template,
+        instructions=src.instructions,
+        attach_portfolio=src.attach_portfolio,
+        tags=src.tags,
+        is_default=False,
+    )
+    db.add(copy)
+    db.commit()
+    db.refresh(copy)
+    return _template_with_stats(copy, db)
+
+
+@router.post("/campaign-templates/{template_id}/preview")
+def preview_campaign_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Render template with sample/placeholder data for preview."""
+    tmpl = db.query(CampaignTemplate).filter(CampaignTemplate.id == template_id).first()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Campaign template not found")
+    sample = {
+        "company_name": "Acme Corp",
+        "owner_name": "Jane Smith",
+        "niche": "SaaS",
+        "location": "San Francisco, CA",
+        "address": "123 Market St, San Francisco, CA 94103",
+        "specific_page": "acmecorp.com/about",
+        "date": datetime.utcnow().strftime("%B %d, %Y"),
+    }
+    def render(text: str) -> str:
+        for k, v in sample.items():
+            text = text.replace("{{" + k + "}}", v)
+        return text
+    return {
+        "subject": render(tmpl.subject_template),
+        "body": render(tmpl.body_template),
+        "sample": sample,
+    }
 
 
 @router.delete("/campaign-templates/{template_id}")
@@ -464,6 +549,8 @@ async def send_bulk_emails(
         status = "sent" if result["success"] else "failed"
         log = EmailLog(
             company_id=company.id,
+            campaign_template_id=tmpl.id,
+            tenant_id=current_user.tenant_id,
             recipient_email=recipient_email,
             recipient_name=owner_name or None,
             subject=subject,
@@ -647,6 +734,7 @@ async def send_ai_emails(
                     company_obj.status = "sent"
             log = EmailLog(
                 company_id=email.company_id,
+                tenant_id=current_user.tenant_id,
                 recipient_email=email.recipient_email,
                 recipient_name=email.recipient_name or None,
                 subject=email.subject,
@@ -671,3 +759,504 @@ async def send_ai_emails(
 
     db.commit()
     return {"items": items, "sent": sent, "failed": failed}
+
+
+# ─────────────────────────────────────────────
+# Broadcast: generate drafts, list drafts, reject, send-approved
+# ─────────────────────────────────────────────
+
+def _primary_contact(company: Company):
+    """Return the highest-priority contact for a company."""
+    by_role = {ct.role.upper(): ct for ct in company.contacts}
+    return (
+        by_role.get("CEO")
+        or by_role.get("CTO")
+        or by_role.get("CFO")
+        or next(iter(company.contacts), None)
+    )
+
+
+def _substitute_placeholders(text: str, company: Company, owner_name: str) -> str:
+    return (
+        text
+        .replace("{{company_name}}", company.name or "")
+        .replace("{{owner_name}}", owner_name or "")
+        .replace("{{address}}", company.address or "")
+        .replace("{{niche}}", company.niche or "")
+        .replace("{{location}}", company.location or "")
+        .replace("{{website}}", company.website or "")
+    )
+
+
+@router.post("/broadcast/generate")
+async def broadcast_generate(
+    payload: BroadcastGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    For each selected company, generate a personalised email draft from the
+    campaign template and store/update it as an EmailTemplate record.
+    If use_ai=True and ANTHROPIC_API_KEY is configured, calls Claude for
+    deeper personalisation; otherwise falls back to placeholder substitution.
+    """
+    tmpl = db.query(CampaignTemplate).filter(CampaignTemplate.id == payload.campaign_template_id).first()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Campaign template not found")
+
+    companies = db.query(Company).filter(Company.id.in_(payload.company_ids)).all()
+    sender_name = _get_sender_full_name(current_user, db)
+
+    ai_client = None
+    if payload.use_ai and settings.ANTHROPIC_API_KEY:
+        try:
+            from anthropic import Anthropic
+            ai_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        except Exception:
+            pass
+
+    results = []
+    for company in companies:
+        primary = _primary_contact(company)
+        owner_name = primary.name if primary else ""
+        recipient_email = primary.email if primary else ""
+        recipient_role = primary.role if primary else ""
+
+        subject = _substitute_placeholders(tmpl.subject_template, company, owner_name)
+        body = _substitute_placeholders(tmpl.body_template, company, owner_name)
+
+        # Attempt AI generation
+        if ai_client:
+            try:
+                sender_block = f" Sign off with: {sender_name}." if sender_name else ""
+                instr_block = (
+                    f"\n\nInstructions: {tmpl.instructions.strip()}"
+                    if tmpl.instructions
+                    else ""
+                )
+                domain = (company.website or "").replace("https://", "").replace("http://", "").split("/")[0]
+                msg = ai_client.messages.create(
+                    model=settings.ANTHROPIC_MODEL,
+                    max_tokens=1024,
+                    system=(
+                        "You are an expert B2B outreach copywriter. "
+                        "Write a single personalised cold email. "
+                        "Return JSON with 'subject' and 'body' keys only. "
+                        "Body must be valid HTML using <p> tags for paragraphs."
+                        + sender_block
+                        + instr_block
+                    ),
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"Template subject: {tmpl.subject_template}\n"
+                            f"Template body:\n{tmpl.body_template}\n\n"
+                            f"Lead:\n"
+                            f"- Company: {company.name}\n"
+                            f"- Domain: {domain}\n"
+                            f"- Niche: {company.niche or ''}\n"
+                            f"- Location: {company.location or ''}\n"
+                            f"- Decision maker: {owner_name} ({recipient_role})\n"
+                            f"- Recipient email: {recipient_email}\n"
+                            f"- Company info: {(company.company_info or '')[:400]}"
+                        ),
+                    }],
+                )
+                raw = msg.content[0].text.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                data = json.loads(raw)
+                subject = data.get("subject", subject)
+                body = data.get("body", body)
+            except Exception:
+                pass  # fall back to substituted version
+
+        # Upsert EmailTemplate record (skip if already sent)
+        existing = (
+            db.query(EmailTemplate)
+            .filter(EmailTemplate.company_id == company.id)
+            .filter(EmailTemplate.status.notin_(["sent"]))
+            .order_by(EmailTemplate.updated_at.desc())
+            .first()
+        )
+        if existing:
+            existing.subject = subject
+            existing.body = body
+            existing.status = "drafted"
+            existing.updated_at = datetime.utcnow()
+            et = existing
+        else:
+            et = EmailTemplate(company_id=company.id, subject=subject, body=body, status="drafted")
+            db.add(et)
+        db.flush()
+
+        domain = (company.website or "").replace("https://", "").replace("http://", "").split("/")[0]
+        results.append({
+            "company_id": company.id,
+            "template_id": et.id,
+            "company_name": company.name,
+            "domain": domain,
+            "niche": company.niche or "",
+            "location": company.location or "",
+            "contact_name": owner_name,
+            "contact_email": recipient_email,
+            "status": "drafted",
+            "subject": subject,
+            "body": body,
+            "filled_vars": {
+                "company": company.name or "",
+                "niche": company.niche or "",
+                "owner": owner_name,
+                "location": company.location or "",
+                "domain": domain,
+            },
+        })
+
+    db.commit()
+    return {"results": results, "generated": len(results)}
+
+
+@router.get("/broadcast/drafts")
+def broadcast_get_drafts(
+    company_ids: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return the latest draft for each requested company ID."""
+    if not company_ids:
+        return []
+    ids = [int(x) for x in company_ids.split(",") if x.strip().isdigit()]
+    companies = db.query(Company).filter(Company.id.in_(ids)).all()
+
+    result = []
+    for company in companies:
+        primary = _primary_contact(company)
+        et = (
+            db.query(EmailTemplate)
+            .filter(EmailTemplate.company_id == company.id)
+            .filter(EmailTemplate.status.notin_(["sent"]))
+            .order_by(EmailTemplate.updated_at.desc())
+            .first()
+        )
+        domain = (company.website or "").replace("https://", "").replace("http://", "").split("/")[0]
+        result.append({
+            "company_id": company.id,
+            "company_name": company.name,
+            "domain": domain,
+            "niche": company.niche or "",
+            "location": company.location or "",
+            "contact_name": primary.name if primary else "",
+            "contact_email": primary.email if primary else "",
+            "template_id": et.id if et else None,
+            "status": et.status if et else "pending",
+            "subject": et.subject if et else "",
+            "body": et.body if et else "",
+            "filled_vars": {
+                "company": company.name or "",
+                "niche": company.niche or "",
+                "owner": primary.name if primary else "",
+                "location": company.location or "",
+                "domain": domain,
+            },
+        })
+    return result
+
+
+@router.post("/templates/{template_id}/reject")
+def reject_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Mark an email draft as rejected."""
+    et = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    if not et:
+        raise HTTPException(status_code=404, detail="Template not found")
+    et.status = "rejected"
+    db.commit()
+    return {"id": et.id, "status": "rejected"}
+
+
+@router.post("/broadcast/send-approved")
+def broadcast_send_approved(
+    payload: BroadcastSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send all approved EmailTemplate drafts in the given list."""
+    templates = (
+        db.query(EmailTemplate)
+        .filter(EmailTemplate.id.in_(payload.template_ids))
+        .filter(EmailTemplate.status == "approved")
+        .all()
+    )
+    if not templates:
+        return {"sent": 0, "failed": 0, "errors": []}
+
+    creds = _load_email_creds(current_user, db)
+    _assert_email_sending_configured(creds)
+    _EXTRA = {"sender_full_name", "tracking_base_url"}
+    send_creds = {k: v for k, v in creds.items() if k not in _EXTRA}
+    tracking_base_url = creds.get("tracking_base_url") or ""
+
+    sent = 0
+    failed = 0
+    errors: list[str] = []
+
+    for et in templates:
+        company = db.query(Company).filter(Company.id == et.company_id).first()
+        primary = _primary_contact(company) if company else None
+        recipient_email = primary.email if primary else None
+
+        if not recipient_email:
+            failed += 1
+            errors.append(f"company {et.company_id}: no recipient email")
+            continue
+
+        tracking_token = str(uuid.uuid4())
+        deliverability_mode = settings.DELIVERABILITY_MODE_ENABLED and _is_first_touch(
+            db, et.company_id, recipient_email
+        )
+        result = email_service.send_email(
+            to_email=recipient_email,
+            to_name=primary.name if primary else None,
+            subject=et.subject,
+            body_html=et.body,
+            attach_portfolio=payload.attach_portfolio,
+            user_id=current_user.id,
+            tracking_token=tracking_token,
+            tracking_base_url=tracking_base_url,
+            deliverability_mode=deliverability_mode,
+            **send_creds,
+        )
+
+        if result["success"]:
+            sent += 1
+            et.status = "sent"
+            if company:
+                company.status = "sent"
+            log = EmailLog(
+                template_id=et.id,
+                company_id=et.company_id,
+                tenant_id=current_user.tenant_id,
+                recipient_email=recipient_email,
+                recipient_name=primary.name if primary else None,
+                subject=et.subject,
+                body=et.body,
+                status="sent",
+                sent_at=datetime.utcnow(),
+                tracking_token=tracking_token,
+            )
+            db.add(log)
+            db.flush()
+            from app.api.followups import schedule_followups
+            schedule_followups(log, db, tenant_id=current_user.tenant_id)
+        else:
+            failed += 1
+            errors.append(f"company {et.company_id}: {result.get('error', 'send failed')}")
+
+    db.commit()
+    return {"sent": sent, "failed": failed, "errors": errors}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sent History endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _days_ago(n: int) -> datetime:
+    from datetime import timedelta
+    return datetime.utcnow() - timedelta(days=n)
+
+
+@router.get("/history/stats")
+def get_history_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return aggregate stats for the sent-history page."""
+    from datetime import timedelta
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
+
+    base = db.query(EmailLog).filter(EmailLog.status == "sent")
+    total = base.count()
+    this_week = base.filter(EmailLog.sent_at >= week_ago).count()
+    last_week = (
+        db.query(EmailLog)
+        .filter(EmailLog.status == "sent", EmailLog.sent_at >= two_weeks_ago, EmailLog.sent_at < week_ago)
+        .count()
+    )
+    opened = db.query(EmailLog).filter(EmailLog.status == "sent", EmailLog.open_count > 0).count()
+    replied = db.query(EmailLog).filter(EmailLog.status == "sent", EmailLog.replied_at.isnot(None)).count()
+    bounced = db.query(EmailLog).filter(EmailLog.status == "bounced").count()
+    bounced_total = db.query(EmailLog).filter(EmailLog.status.in_(["sent", "bounced"])).count()
+
+    open_rate = round(opened / total * 100, 1) if total else 0.0
+    reply_rate = round(replied / total * 100, 1) if total else 0.0
+
+    return {
+        "total_sent": total,
+        "this_week": this_week,
+        "last_week": last_week,
+        "delta_week": this_week - last_week,
+        "opened": opened,
+        "open_rate": open_rate,
+        "replied": replied,
+        "reply_rate": reply_rate,
+        "bounced": bounced,
+        "window_label": "7-day window",
+    }
+
+
+@router.get("/history/chart")
+def get_history_chart(
+    days: int = 14,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return daily sent / opened counts for the last N days."""
+    from datetime import timedelta, date as date_type
+    import calendar
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    logs = (
+        db.query(EmailLog)
+        .filter(EmailLog.status.in_(["sent", "bounced"]), EmailLog.sent_at >= cutoff)
+        .all()
+    )
+
+    from collections import defaultdict
+    sent_by_day: dict = defaultdict(int)
+    opened_by_day: dict = defaultdict(int)
+
+    for log in logs:
+        if log.sent_at:
+            d = log.sent_at.date().isoformat()
+            sent_by_day[d] += 1
+            if log.open_count and log.open_count > 0:
+                opened_by_day[d] += 1
+
+    today = datetime.utcnow().date()
+    result = []
+    for i in range(days, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        result.append({"date": d, "sent": sent_by_day.get(d, 0), "opened": opened_by_day.get(d, 0)})
+
+    return result
+
+
+@router.get("/history")
+def get_history(
+    q: Optional[str] = None,
+    status: Optional[str] = None,
+    date_range: str = "7d",
+    niche: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Paginated email history with company + contact enrichment."""
+    from datetime import timedelta
+
+    query = db.query(EmailLog).join(Company, EmailLog.company_id == Company.id, isouter=True)
+
+    # Date filter
+    if date_range == "7d":
+        query = query.filter(EmailLog.sent_at >= _days_ago(7))
+    elif date_range == "30d":
+        query = query.filter(EmailLog.sent_at >= _days_ago(30))
+    elif date_range == "90d":
+        query = query.filter(EmailLog.sent_at >= _days_ago(90))
+
+    # Status filter
+    if status == "opened":
+        query = query.filter(EmailLog.open_count > 0)
+    elif status == "replied":
+        query = query.filter(EmailLog.replied_at.isnot(None))
+    elif status == "bounced":
+        query = query.filter(EmailLog.status == "bounced")
+    elif status == "not_opened":
+        query = query.filter(EmailLog.open_count == 0, EmailLog.status == "sent")
+    elif status and status != "all":
+        query = query.filter(EmailLog.status == status)
+
+    # Niche filter
+    if niche:
+        query = query.filter(Company.niche.ilike(f"%{niche}%"))
+
+    # Search
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            Company.name.ilike(like)
+            | EmailLog.recipient_email.ilike(like)
+            | EmailLog.recipient_name.ilike(like)
+            | EmailLog.subject.ilike(like)
+            | Company.niche.ilike(like)
+            | Company.location.ilike(like)
+        )
+
+    total = query.count()
+    logs = (
+        query.order_by(EmailLog.sent_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    items = []
+    for log in logs:
+        company = log.company
+        domain = ""
+        if company and company.website:
+            domain = company.website.replace("https://", "").replace("http://", "").split("/")[0]
+        items.append({
+            "id": log.id,
+            "company_id": log.company_id,
+            "company_name": company.name if company else "",
+            "company_domain": domain,
+            "niche": company.niche if company else None,
+            "location": company.location if company else None,
+            "recipient_name": log.recipient_name,
+            "recipient_email": log.recipient_email,
+            "subject": log.subject,
+            "status": log.status,
+            "sent_at": log.sent_at.isoformat() if log.sent_at else None,
+            "opened_at": log.opened_at.isoformat() if log.opened_at else None,
+            "open_count": log.open_count or 0,
+            "replied_at": log.replied_at.isoformat() if log.replied_at else None,
+            "error_message": log.error_message,
+        })
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": max(1, (total + page_size - 1) // page_size)}
+
+
+@router.delete("/logs/{log_id}", status_code=204)
+def delete_log(
+    log_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    log = db.query(EmailLog).filter(EmailLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    db.delete(log)
+    db.commit()
+
+
+@router.get("/history/niches")
+def get_history_niches(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return distinct niches from sent emails for the filter dropdown."""
+    rows = (
+        db.query(Company.niche)
+        .join(EmailLog, EmailLog.company_id == Company.id)
+        .filter(Company.niche.isnot(None), Company.niche != "")
+        .distinct()
+        .all()
+    )
+    return sorted([r[0] for r in rows if r[0]])

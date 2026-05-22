@@ -1,22 +1,16 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Alert,
   Box,
   Button,
   Checkbox,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  FormControl,
   IconButton,
-  InputLabel,
   LinearProgress,
+  Menu,
   MenuItem,
-  Paper,
-  Select,
   Table,
   TableBody,
   TableCell,
@@ -24,40 +18,39 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Toolbar,
-  Tooltip,
   Typography,
 } from "@mui/material";
-import { PageHeader, StatusChip, EmptyState } from "./primitives";
-import { StorageOutlined } from "@mui/icons-material";
 import {
   Add,
+  ArrowBack,
+  ArrowForward,
   AutoFixHigh,
-  Business,
+  CloudUpload,
   Delete,
-  Description,
   Download,
   Edit,
-  Email,
-  FilterList,
-  UploadFile,
-  Store,
+  ExpandMore,
+  Send,
+  Search,
 } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { StatusChip } from "./primitives";
+import { colors, shadow } from "../theme/tokens";
 import {
   BROADCAST_LEADS_STORAGE_KEY,
   type BroadcastLeadPayload,
 } from "../broadcastLeads";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface Contact {
   id: number;
   role: string;
   name: string | null;
   email: string | null;
+  phone?: string | null;
 }
-
 interface Company {
   id: number;
   name: string;
@@ -70,1268 +63,871 @@ interface Company {
   phone: string | null;
   contacts: Contact[];
 }
-
-const STATUS_TONE: Record<
-  string,
-  "default" | "amber" | "brand" | "violet" | "green" | "red"
-> = {
-  created: "default",
-  scraping: "amber",
-  data_parsed: "brand",
-  enriched: "brand",
-  drafted: "violet",
-  approved: "violet",
-  sent: "brand",
-  opened: "green",
-  replied: "violet",
-  error: "red",
-};
-
 interface LeadsListProps {
   onSendToSelected?: (ids: number[]) => void;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+const PER_PAGE = 10;
+
+const STATUS_LABEL: Record<string, string> = {
+  created:     "Created",
+  scraping:    "Enriching\u2026",
+  data_parsed: "Enriched",
+  drafted:     "Drafted",
+  approved:    "Approved",
+  sent:        "Sent",
+  error:       "Missing data",
+};
+const STATUS_TONE: Record<string, "default" | "green" | "brand" | "amber" | "red"> = {
+  created:     "default",
+  scraping:    "brand",
+  data_parsed: "green",
+  drafted:     "brand",
+  approved:    "amber",
+  sent:        "brand",
+  error:       "red",
+};
+
+const AVATAR_COLORS = [
+  colors.brand, colors.green, colors.violet, colors.amber,
+  colors.teal,  colors.red,   colors.brandInk,
+];
+function avatarColor(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffffffff;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function initials(name: string) {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+}
+function cleanDomain(url: string) {
+  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+function getPrimary(contacts: Contact[]) {
+  return (
+    contacts.find((c) => c.role?.toUpperCase() === "CEO") ||
+    contacts.find((c) => c.role?.toUpperCase() === "CTO") ||
+    contacts.find((c) => c.role?.toUpperCase() === "CFO") ||
+    contacts[0] || null
+  );
+}
+
+// ── Filter pill ───────────────────────────────────────────────────────────────
+function FilterPill({
+  label, value, options, onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+  return (
+    <>
+      <Button
+        variant="outlined"
+        size="small"
+        endIcon={<ExpandMore sx={{ fontSize: "14px !important" }} />}
+        onClick={(e) => setAnchor(e.currentTarget)}
+        sx={{
+          textTransform: "none",
+          fontSize: 12,
+          fontWeight: 500,
+          color: value ? colors.brand : colors.ink2,
+          borderColor: value ? colors.brand : colors.border,
+          borderRadius: "8px",
+          px: 1.5,
+          py: 0.5,
+          bgcolor: value ? colors.brandSoft : "transparent",
+          "&:hover": { borderColor: colors.borderStrong },
+        }}
+      >
+        {label} {value ? `\u00b7 ${value}` : "\u00b7 All"}
+      </Button>
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+        PaperProps={{ sx: { borderRadius: "10px", border: `1px solid ${colors.border}`, boxShadow: shadow.sh2, minWidth: 160 } }}
+      >
+        <MenuItem
+          dense
+          selected={!value}
+          onClick={() => { onChange(""); setAnchor(null); }}
+          sx={{ fontSize: 13, color: !value ? colors.brand : colors.ink1 }}
+        >
+          All
+        </MenuItem>
+        {options.map((o) => (
+          <MenuItem
+            key={o}
+            dense
+            selected={value === o}
+            onClick={() => { onChange(o); setAnchor(null); }}
+            sx={{ fontSize: 13, color: value === o ? colors.brand : colors.ink1 }}
+          >
+            {o}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<number[]>([]);
-  const [scrapingTaskId, setScrapingTaskId] = useState<string | null>(null);
-  const [scrapingProgress, setScrapingProgress] = useState<number>(0);
-  const [scrapingTotal, setScrapingTotal] = useState<number>(0);
+
+  // Enrichment polling
+  const [scrapingTaskId, setScrapingTaskId]   = useState<string | null>(null);
+  const [scrapingProgress, setScrapingProgress] = useState(0);
+  const [scrapingTotal, setScrapingTotal]     = useState(0);
+  const [scrapingDomain, setScrapingDomain]   = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll scraping progress
   useEffect(() => {
     if (!scrapingTaskId) return;
     pollRef.current = setInterval(async () => {
       try {
-        const status = await api.getScrapingStatus(scrapingTaskId);
-        setScrapingProgress(status.processed_companies);
-        setScrapingTotal(status.total_companies);
-        if (status.status === "completed") {
+        const s = await api.getScrapingStatus(scrapingTaskId);
+        setScrapingProgress(s.processed_companies ?? 0);
+        setScrapingTotal(s.total_companies ?? 0);
+        setScrapingDomain(s.current_domain ?? "");
+        if (s.status === "completed") {
           clearInterval(pollRef.current!);
           setScrapingTaskId(null);
           queryClient.invalidateQueries({ queryKey: ["companies"] });
-          toast.success(
-            `Enrichment done: ${status.successful_companies} succeeded, ${status.failed_companies} failed`,
-          );
+          queryClient.invalidateQueries({ queryKey: ["company-stats"] });
+          toast.success(`Enrichment done: ${s.successful_companies} succeeded, ${s.failed_companies} failed`);
         }
-      } catch {
-        clearInterval(pollRef.current!);
-        setScrapingTaskId(null);
-      }
+      } catch { clearInterval(pollRef.current!); setScrapingTaskId(null); }
     }, 2000);
     return () => clearInterval(pollRef.current!);
   }, [scrapingTaskId, queryClient]);
 
+  // Filters + pagination
+  const [search, setSearch]             = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterNiche, setFilterNiche]   = useState("");
+  const [filterLoc, setFilterLoc]       = useState("");
+  const [filterBizType, setFilterBizType] = useState("");
+  const [page, setPage]                 = useState(1);
+  const [selected, setSelected]         = useState<Set<number>>(new Set());
+
+  // Last upload info (localStorage)
+  const [lastUploadName, setLastUploadName] = useState(() => localStorage.getItem("last_upload_name") || "");
+  const [lastUploadTime, setLastUploadTime] = useState(() => localStorage.getItem("last_upload_time") || "");
+
+  // Drag & drop
+  const [isDragging, setIsDragging] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onDrop = useCallback((file: File) => {
+    if (!file.name.match(/\.(csv|xlsx|xls)$/i)) {
+      toast.error("Please drop a .csv or .xlsx file");
+      return;
+    }
+    uploadMutation.mutate(file);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Edit dialog
+  const [editOpen, setEditOpen]     = useState(false);
+  const [editCompany, setEditCompany] = useState<Company | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", website: "", niche: "", location: "",
+    address: "", business_type: "independent", phone: "",
+    ceo_name: "", ceo_email: "",
+  });
+
+  // Add lead dialog
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: "", website: "", niche: "", location: "",
+    address: "", business_type: "independent", phone: "",
+    ceo_name: "", ceo_email: "", ceo_phone: "",
+    email_subject: "", email_body: "",
+  });
+
+  // Queries
+  const { data: statsData } = useQuery({
+    queryKey: ["company-stats"],
+    queryFn: api.getCompanyStats,
+    refetchInterval: 15_000,
+  });
+
+  const { data: companies = [], isLoading } = useQuery<Company[]>({
+    queryKey: ["companies", filterStatus, filterNiche, filterLoc, filterBizType, search],
+    queryFn: () => api.getCompanies({
+      status:        filterStatus   || undefined,
+      search:        search         || undefined,
+      niche:         filterNiche    || undefined,
+      location:      filterLoc      || undefined,
+      business_type: filterBizType  || undefined,
+      limit: 500,
+    }),
+    keepPreviousData: true,
+  } as any);
+
+  // Unique filter options
+  const allCompanies = useQuery<Company[]>({ queryKey: ["companies"], queryFn: () => api.getCompanies({ limit: 500 }) });
+  const niches       = Array.from(new Set((allCompanies.data ?? []).map((c) => c.niche).filter(Boolean))) as string[];
+  const locations    = Array.from(new Set((allCompanies.data ?? []).map((c) => c.location).filter(Boolean))) as string[];
+  const bizTypes     = ["independent", "franchise"];
+  const statusOptions = ["created", "scraping", "data_parsed", "drafted", "approved", "sent", "enriched", "pending", "error"];
+
+  // Pagination
+  const totalCount = companies.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
+  const paginated  = companies.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  // Selection
+  const allPageSelected = paginated.length > 0 && paginated.every((c) => selected.has(c.id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) paginated.forEach((c) => next.delete(c.id));
+      else paginated.forEach((c) => next.add(c.id));
+      return next;
+    });
+  };
+  const toggleRow = (id: number) => {
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  // Mutations
   const enrichMutation = useMutation({
-    mutationFn: (ids: number[] | undefined) => api.startScraping(ids),
+    mutationFn: (ids?: number[]) => api.startScraping(ids),
     onSuccess: (data) => {
       if (data.task_id) {
         setScrapingTaskId(data.task_id);
         setScrapingProgress(0);
         setScrapingTotal(data.total_companies);
-        toast.success(`Enrichment started for ${data.total_companies} leads…`);
+        toast.success(`Enrichment started for ${data.total_companies} leads\u2026`);
       } else {
         toast("No leads to enrich");
       }
     },
     onError: () => toast.error("Failed to start enrichment"),
   });
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>("");
-  const [filterNiche, setFilterNiche] = useState<string>("");
-  const [filterLocation, setFilterLocation] = useState<string>("");
-  const [search, setSearch] = useState<string>("");
 
-  // Edit lead dialog state
-  const [editOpen, setEditOpen] = useState(false);
-  const [editCompany, setEditCompany] = useState<Company | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: "",
-    website: "",
-    niche: "",
-    location: "",
-    address: "",
-    business_type: "independent",
-    phone: "",
-    ceo_name: "",
-    ceo_email: "",
-  });
-
-  const openEdit = (company: Company) => {
-    const primary = getPrimaryContact(company.contacts);
-    setEditCompany(company);
-    setEditForm({
-      name: company.name,
-      website: company.website || "",
-      niche: company.niche || "",
-      location: company.location || "",
-      address: company.address || "",
-      business_type: company.business_type || "independent",
-      phone: company.phone || "",
-      ceo_name: primary?.name || "",
-      ceo_email: primary?.email || "",
-    });
-    setEditOpen(true);
-  };
-
-  const handleEditField = (key: string, value: string) =>
-    setEditForm((prev) => ({ ...prev, [key]: value }));
-
-  const updateMutation = useMutation({
-    mutationFn: () =>
-      api.updateCompany(editCompany!.id, {
-        name: editForm.name,
-        website: editForm.website || undefined,
-        niche: editForm.niche || undefined,
-        location: editForm.location || undefined,
-        address: editForm.address || undefined,
-        business_type: editForm.business_type || "independent",
-        phone: editForm.phone || undefined,
-        ceo_name: editForm.ceo_name || undefined,
-        ceo_email: editForm.ceo_email || undefined,
-      }),
-    onSuccess: () => {
-      toast.success("Lead updated");
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadExcel(file),
+    onSuccess: (data, file) => {
+      const added   = data?.companies_added ?? 0;
+      const skipped = data?.companies_skipped ?? 0;
+      toast.success(`Upload done: ${added} added, ${skipped} skipped`);
+      if (data?.errors?.length) toast.error(`${data.errors.length} row(s) had errors`);
+      const now = new Date().toLocaleString();
+      localStorage.setItem("last_upload_name", file.name);
+      localStorage.setItem("last_upload_time", now);
+      setLastUploadName(file.name);
+      setLastUploadTime(now);
       queryClient.invalidateQueries({ queryKey: ["companies"] });
-      setEditOpen(false);
-      setEditCompany(null);
+      queryClient.invalidateQueries({ queryKey: ["company-stats"] });
     },
-    onError: () => toast.error("Failed to update lead"),
-  });
-
-  // Manual lead creation dialog state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    name: "",
-    website: "",
-    niche: "",
-    location: "",
-    address: "",
-    business_type: "independent",
-    phone: "",
-    ceo_name: "",
-    ceo_email: "",
-    ceo_phone: "",
-    email_subject: "",
-    email_body: "",
-  });
-
-  const handleManualField = (key: string, value: string) =>
-    setManualForm((prev) => ({ ...prev, [key]: value }));
-
-  const createManualMutation = useMutation({
-    mutationFn: () =>
-      api.createManualLead({
-        name: manualForm.name,
-        website: manualForm.website || undefined,
-        niche: manualForm.niche || undefined,
-        location: manualForm.location || undefined,
-        address: manualForm.address || undefined,
-        business_type: manualForm.business_type || "independent",
-        phone: manualForm.phone || undefined,
-        ceo_name: manualForm.ceo_name || undefined,
-        ceo_email: manualForm.ceo_email || undefined,
-        ceo_phone: manualForm.ceo_phone || undefined,
-        email_subject: manualForm.email_subject || undefined,
-        email_body: manualForm.email_body || undefined,
-      }),
-    onSuccess: () => {
-      toast.success("Lead created");
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      setCreateOpen(false);
-      setManualForm({
-        name: "",
-        website: "",
-        niche: "",
-        location: "",
-        address: "",
-        business_type: "independent",
-        phone: "",
-        ceo_name: "",
-        ceo_email: "",
-        ceo_phone: "",
-        email_subject: "",
-        email_body: "",
-      });
-    },
-    onError: () => toast.error("Failed to create lead"),
-  });
-
-  const { data: companies = [], isLoading } = useQuery<Company[]>({
-    queryKey: ["companies"],
-    queryFn: () => api.getCompanies(),
+    onError: (e: any) => toast.error(e?.response?.data?.detail ?? "Upload failed"),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteCompany(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      toast.success("Lead deleted");
-    },
-    onError: () => toast.error("Failed to delete lead"),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["companies"] }); queryClient.invalidateQueries({ queryKey: ["company-stats"] }); toast.success("Lead deleted"); },
+    onError: () => toast.error("Delete failed"),
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => api.bulkDeleteCompanies(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
-      setSelected([]);
-      toast.success("Selected leads deleted");
+      queryClient.invalidateQueries({ queryKey: ["company-stats"] });
+      setSelected(new Set());
+      toast.success("Leads deleted");
     },
-    onError: () => toast.error("Failed to delete selected leads"),
+    onError: () => toast.error("Delete failed"),
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadExcel(file),
-    onSuccess: (data) => {
-      const added = data?.companies_added ?? 0;
-      const skipped = data?.companies_skipped ?? 0;
-      toast.success(`Upload completed: ${added} added, ${skipped} skipped`);
-      if (Array.isArray(data?.errors) && data.errors.length > 0) {
-        toast.error(`Some rows had errors: ${data.errors.length}`);
-      }
-      setUploadFile(null);
+  const updateMutation = useMutation({
+    mutationFn: () => api.updateCompany(editCompany!.id, {
+      name: editForm.name, website: editForm.website || undefined,
+      niche: editForm.niche || undefined, location: editForm.location || undefined,
+      address: editForm.address || undefined,
+      business_type: editForm.business_type || "independent",
+      phone: editForm.phone || undefined,
+      ceo_name: editForm.ceo_name || undefined,
+      ceo_email: editForm.ceo_email || undefined,
+    }),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setEditOpen(false);
+      toast.success("Lead updated");
     },
-    onError: (error: any) => {
-      const detail = error?.response?.data?.detail || "Upload failed";
-      toast.error(detail);
-    },
+    onError: () => toast.error("Update failed"),
   });
 
-  const filtered = companies.filter((c) => {
-    // Sent leads live in History — hide from this page
-    if (c.status === "sent") return false;
-    if (filterStatus && c.status !== filterStatus) return false;
-    if (filterNiche && c.niche !== filterNiche) return false;
-    if (filterLocation && c.location !== filterLocation) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (
-        !c.name.toLowerCase().includes(q) &&
-        !c.website.toLowerCase().includes(q) &&
-        !(c.address || "").toLowerCase().includes(q)
-      )
-        return false;
-    }
-    return true;
+  const createMutation = useMutation({
+    mutationFn: () => api.createManualLead({
+      name: addForm.name, website: addForm.website || undefined,
+      niche: addForm.niche || undefined, location: addForm.location || undefined,
+      address: addForm.address || undefined,
+      business_type: addForm.business_type || "independent",
+      phone: addForm.phone || undefined,
+      ceo_name: addForm.ceo_name || undefined,
+      ceo_email: addForm.ceo_email || undefined,
+      ceo_phone: addForm.ceo_phone || undefined,
+      email_subject: addForm.email_subject || undefined,
+      email_body: addForm.email_body || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["company-stats"] });
+      setAddOpen(false);
+      setAddForm({ name: "", website: "", niche: "", location: "", address: "", business_type: "independent", phone: "", ceo_name: "", ceo_email: "", ceo_phone: "", email_subject: "", email_body: "" });
+      toast.success("Lead added");
+    },
+    onError: () => toast.error("Failed to add lead"),
   });
 
-  const niches = Array.from(
-    new Set(companies.map((c) => c.niche).filter(Boolean)),
-  ) as string[];
-  const locations = Array.from(
-    new Set(companies.map((c) => c.location).filter(Boolean)),
-  ) as string[];
-
-  const allSelected =
-    filtered.length > 0 && filtered.every((c) => selected.includes(c.id));
-  const someSelected = filtered.some((c) => selected.includes(c.id));
-
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected((prev) =>
-        prev.filter((id) => !filtered.find((c) => c.id === id)),
-      );
-    } else {
-      setSelected((prev) =>
-        Array.from(new Set([...prev, ...filtered.map((c) => c.id)])),
-      );
-    }
+  const openEdit = (co: Company) => {
+    const p = getPrimary(co.contacts);
+    setEditCompany(co);
+    setEditForm({ name: co.name, website: co.website || "", niche: co.niche || "", location: co.location || "", address: co.address || "", business_type: co.business_type || "independent", phone: co.phone || "", ceo_name: p?.name || "", ceo_email: p?.email || "" });
+    setEditOpen(true);
   };
 
-  const toggle = (id: number) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const handleExport = async (format: "csv" | "xlsx") => {
+  const handleExport = async (fmt: "csv" | "xlsx") => {
     try {
-      const filters = {
-        ...(filterNiche ? { niche: filterNiche } : {}),
-        ...(filterLocation ? { location: filterLocation } : {}),
-        ...(filterStatus ? { status: filterStatus } : {}),
-      };
-      const response = await api.exportLeadsBlob(format, filters);
-      const blob = new Blob([response.data], {
-        type:
-          format === "xlsx"
-            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            : "text/csv",
+      const res = await api.exportLeadsBlob(fmt, {
+        ...(filterNiche    ? { niche: filterNiche } : {}),
+        ...(filterLoc      ? { location: filterLoc } : {}),
+        ...(filterStatus   ? { status: filterStatus } : {}),
+      });
+      const blob = new Blob([res.data], {
+        type: fmt === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `leads_export.${format}`;
-      a.click();
+      const a = document.createElement("a"); a.href = url; a.download = `leads.${fmt}`; a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Export failed");
-    }
+    } catch { toast.error("Export failed"); }
   };
 
   const handleDownloadTemplate = async () => {
     try {
-      const response = await api.downloadLeadsTemplateBlob();
-      const blob = new Blob([response.data], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
+      const res = await api.downloadLeadsTemplateBlob();
+      const blob = new Blob([res.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "companies_template.xlsx";
-      a.click();
+      const a = document.createElement("a"); a.href = url; a.download = "leads_template.xlsx"; a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to download format template");
-    }
+    } catch { toast.error("Failed to download template"); }
   };
 
-  const getPrimaryContact = (contacts: Contact[]) => {
-    return (
-      contacts.find((c) => c.role === "CEO") ||
-      contacts.find((c) => c.role === "CTO") ||
-      contacts.find((c) => c.role === "CFO") ||
-      contacts[0] ||
-      null
-    );
+  const handleBroadcast = () => {
+    if (!onSendToSelected) return;
+    const selectedCos = companies.filter((c) => selected.has(c.id));
+    const payloads: BroadcastLeadPayload[] = selectedCos.map((c) => {
+      const p = getPrimary(c.contacts);
+      return { id: c.id, company_name: c.name, niche: c.niche ?? "", domain: c.website ?? "", location: c.location ?? "", platform: c.business_type ?? "", decision_maker: p?.name ?? "", owner_name: p?.name ?? "", role: p?.role ?? "", linkedin: "", email_pattern: "", ai_gap: "", remarks: "", email: p?.email ?? undefined };
+    });
+    try { localStorage.setItem(BROADCAST_LEADS_STORAGE_KEY, JSON.stringify(payloads)); } catch { /* ignore */ }
+    onSendToSelected(Array.from(selected));
   };
 
-  if (isLoading) return <Typography sx={{ p: 4 }}>Loading leads…</Typography>;
+  const stats = statsData ?? { total: 0, enriched: 0, pending: 0, errors: 0 };
+  const enrichingName = scrapingTaskId ? `Enriching leads` : "";
+  const enrichPct = scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0;
 
   return (
     <Box>
-      <PageHeader
-        eyebrow="Pipeline"
-        title="Leads"
-        description={`${filtered.length} lead${filtered.length !== 1 ? "s" : ""} in pipeline`}
-        actions={
-          <Box display="flex" gap={1} flexWrap="wrap">
-            {/* Add Manual Lead */}
-            <Button
-              variant="contained"
-              color="success"
-              startIcon={<Add />}
-              size="small"
-              onClick={() => setCreateOpen(true)}
-            >
-              Add Lead
-            </Button>
-            {/* Enrich / Scrape */}
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={<AutoFixHigh />}
-              size="small"
-              disabled={enrichMutation.isPending || !!scrapingTaskId}
-              onClick={() => {
-                const ids = selected.length > 0 ? selected : undefined;
-                enrichMutation.mutate(ids);
-              }}
-            >
-              {scrapingTaskId
-                ? `Enriching… ${scrapingProgress}/${scrapingTotal}`
-                : selected.length > 0
-                  ? `Enrich ${selected.length} selected`
-                  : "Enrich All Leads"}
-            </Button>
-            {/* Export */}
-            <Button
-              variant="outlined"
-              startIcon={<Download />}
-              size="small"
-              onClick={() => handleExport("csv")}
-            >
-              Export CSV
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<Download />}
-              size="small"
-              onClick={() => handleExport("xlsx")}
-            >
-              Export XLSX
-            </Button>
-            {/* Send selected */}
-            {selected.length > 0 && onSendToSelected && (
-              <Button
-                variant="contained"
-                startIcon={<Email />}
-                size="small"
-                onClick={() => {
-                  const selectedCompanies = companies.filter((c) =>
-                    selected.includes(c.id),
-                  );
-                  const payloads: BroadcastLeadPayload[] =
-                    selectedCompanies.map((c) => {
-                      const primary = getPrimaryContact(c.contacts);
-                      return {
-                        id: c.id,
-                        company_name: c.name,
-                        niche: c.niche ?? "",
-                        domain: c.website ?? "",
-                        location: c.location ?? "",
-                        platform: c.business_type ?? "",
-                        decision_maker: primary?.name ?? "",
-                        owner_name: primary?.name ?? "",
-                        role: primary?.role ?? "",
-                        linkedin: "",
-                        email_pattern: "",
-                        ai_gap: "",
-                        remarks: "",
-                        email: primary?.email ?? undefined,
-                      };
-                    });
-                  try {
-                    localStorage.setItem(
-                      BROADCAST_LEADS_STORAGE_KEY,
-                      JSON.stringify(payloads),
-                    );
-                  } catch {
-                    /* ignore storage errors */
-                  }
-                  onSendToSelected(selected);
-                }}
-              >
-                Broadcast to {selected.length} selected
-              </Button>
-            )}
-          </Box>
-        }
-      />
+      {/* Step indicator */}
+      <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.ink3, mb: 1 }}>
+        Step 1 of 3 &middot; Pipeline source
+      </Typography>
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={1}>
-          Step 1: Upload Leads File
-        </Typography>
-        <Typography variant="body2" color="text.secondary" mb={1.5}>
-          Upload a CSV/XLSX file. Required columns are{" "}
-          <strong>Company_Name</strong> and <strong>Website</strong>. Optional
-          columns: Niche, Location, Address, Business_Type.
-        </Typography>
-        <Box display="flex" gap={1} flexWrap="wrap" mb={1.5}>
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Company_Name (required)"
-          />
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Website (required)"
-          />
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Niche (optional)"
-            variant="outlined"
-          />
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Location (optional)"
-            variant="outlined"
-          />
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Address (optional)"
-            variant="outlined"
-          />
-          <Chip
-            size="small"
-            icon={<Description />}
-            label="Business_Type (optional)"
-            variant="outlined"
-          />
-        </Box>
-        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
-          <Button
-            variant="outlined"
-            startIcon={<Download />}
-            onClick={handleDownloadTemplate}
-          >
-            Download Format Template
-          </Button>
-
-          <Button
-            variant="outlined"
-            component="label"
-            startIcon={<UploadFile />}
-          >
-            {uploadFile ? uploadFile.name : "Choose File"}
-            <input
-              hidden
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={(e) => {
-                const file = e.target.files?.[0] || null;
-                setUploadFile(file);
-              }}
-            />
-          </Button>
-
-          <Button
-            variant="contained"
-            disabled={!uploadFile || uploadMutation.isPending}
-            onClick={() => uploadFile && uploadMutation.mutate(uploadFile)}
-          >
-            {uploadMutation.isPending ? "Uploading..." : "Upload & Parse Leads"}
-          </Button>
-        </Box>
-      </Paper>
-
-      {/* Enrichment progress bar */}
-      {scrapingTaskId && (
-        <Box mb={2}>
-          <Typography variant="body2" color="text.secondary" mb={0.5}>
-            Enriching leads… {scrapingProgress} / {scrapingTotal} processed
+      {/* Title row */}
+      <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2.5}>
+        <Box>
+          <Typography variant="h2" fontWeight={800} color={colors.ink1} lineHeight={1.2} mb={0.5}>
+            Leads
           </Typography>
-          <LinearProgress
-            variant={scrapingTotal > 0 ? "determinate" : "indeterminate"}
-            value={
-              scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0
-            }
-          />
-        </Box>
-      )}
-
-      {/* Filters */}
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={1}>
-          Step 2: Review and Filter Uploaded Leads
-        </Typography>
-        <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
-          <FilterList color="action" />
-          <TextField
-            size="small"
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: 180 }}
-          />
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Status</InputLabel>
-            <Select
-              value={filterStatus}
-              label="Status"
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <MenuItem value="">All</MenuItem>
-              {[
-                "created",
-                "scraping",
-                "drafted",
-                "approved",
-                "sent",
-                "error",
-              ].map((s) => (
-                <MenuItem key={s} value={s}>
-                  {s}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Niche</InputLabel>
-            <Select
-              value={filterNiche}
-              label="Niche"
-              onChange={(e) => setFilterNiche(e.target.value)}
-            >
-              <MenuItem value="">All</MenuItem>
-              {niches.map((n) => (
-                <MenuItem key={n} value={n}>
-                  {n}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Location</InputLabel>
-            <Select
-              value={filterLocation}
-              label="Location"
-              onChange={(e) => setFilterLocation(e.target.value)}
-            >
-              <MenuItem value="">All</MenuItem>
-              {locations.map((l) => (
-                <MenuItem key={l} value={l}>
-                  {l}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          {(filterStatus || filterNiche || filterLocation || search) && (
-            <Button
-              size="small"
-              onClick={() => {
-                setFilterStatus("");
-                setFilterNiche("");
-                setFilterLocation("");
-                setSearch("");
-              }}
-            >
-              Clear
-            </Button>
-          )}
-        </Box>
-      </Paper>
-
-      {selected.length > 0 && (
-        <Toolbar
-          variant="dense"
-          sx={{
-            bgcolor: "primary.light",
-            borderRadius: 1,
-            mb: 1,
-            color: "primary.contrastText",
-          }}
-        >
-          <Typography variant="body2" sx={{ flex: 1 }}>
-            {selected.length} lead{selected.length > 1 ? "s" : ""} selected
+          <Typography fontSize={14} color={colors.ink3}>
+            Upload a CSV or XLSX, enrich each row with public data, then queue selected leads for broadcast.
           </Typography>
-          <Button size="small" color="inherit" onClick={() => setSelected([])}>
-            Deselect all
-          </Button>
-          <Button
-            size="small"
-            variant="contained"
-            color="error"
-            startIcon={<Delete />}
-            sx={{ ml: 1 }}
-            disabled={bulkDeleteMutation.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Delete ${selected.length} selected lead${selected.length > 1 ? "s" : ""}? This cannot be undone.`,
-                )
-              ) {
-                bulkDeleteMutation.mutate(selected);
-              }
+        </Box>
+        {/* Stats badges */}
+        <Box display="flex" gap={3} sx={{ border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, px: 2.5, py: 1.5, flexShrink: 0 }}>
+          {[
+            { label: "Total",    value: stats.total,    color: colors.ink1 },
+            { label: "Enriched", value: stats.enriched, color: colors.green },
+            { label: "Pending",  value: stats.pending,  color: colors.amber },
+            { label: "Errors",   value: stats.errors,   color: colors.red },
+          ].map(({ label, value, color }) => (
+            <Box key={label} textAlign="center">
+              <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: colors.ink3 }}>{label}</Typography>
+              <Typography sx={{ fontSize: "1.25rem", fontWeight: 700, color }}>{value}</Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      {/* Step 1 + Step 2 cards */}
+      <Box display="flex" gap={2} mb={3} sx={{ flexDirection: { xs: "column", md: "row" } }}>
+        {/* Step 1: Upload */}
+        <Box sx={{ flex: "0 0 calc(44% - 8px)", border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, p: "20px 22px" }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: colors.ink3, mb: 0.5 }}>Step 1</Typography>
+          <Typography fontWeight={700} fontSize={15} color={colors.ink1} mb={1}>Upload a spreadsheet</Typography>
+          <Typography fontSize={12} color={colors.ink3} mb={1.5}>
+            Required columns:{" "}
+            <Box component="span" sx={{ fontWeight: 600, color: colors.ink2 }}>Company_Name</Box> and{" "}
+            <Box component="span" sx={{ fontWeight: 600, color: colors.ink2 }}>Website</Box>.
+            {" "}Optional: Niche, Location, Address, Business_Type.
+          </Typography>
+
+          {/* Drop zone */}
+          <Box
+            ref={dropRef}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault(); setIsDragging(false);
+              const file = e.dataTransfer.files[0];
+              if (file) onDrop(file);
+            }}
+            sx={{
+              border: `2px dashed ${isDragging ? colors.brand : colors.border}`,
+              borderRadius: "10px",
+              bgcolor: isDragging ? colors.brandSoft : colors.bgSunken,
+              p: 3,
+              textAlign: "center",
+              cursor: "pointer",
+              transition: "all 0.15s",
+              mb: 1.5,
+              "&:hover": { borderColor: colors.brand, bgcolor: colors.brandSoft },
             }}
           >
-            Delete {selected.length} selected
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              accept=".csv,.xlsx,.xls"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onDrop(f); e.target.value = ""; }}
+            />
+            <CloudUpload sx={{ fontSize: 28, color: uploadMutation.isPending ? colors.brand : colors.ink4, mb: 0.5 }} />
+            {uploadMutation.isPending ? (
+              <>
+                <Typography fontSize={13} fontWeight={500} color={colors.brand}>Uploading\u2026</Typography>
+                <LinearProgress sx={{ mt: 1, borderRadius: 999 }} />
+              </>
+            ) : (
+              <>
+                <Typography fontSize={13} fontWeight={500} color={colors.ink2}>Drop your CSV or XLSX here</Typography>
+                <Typography fontSize={12} color={colors.ink3}>or <Box component="span" sx={{ color: colors.brand, fontWeight: 600 }}>browse files</Box> &middot; max 5MB</Typography>
+              </>
+            )}
+          </Box>
+
+          <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Download sx={{ fontSize: "14px !important" }} />}
+              onClick={handleDownloadTemplate}
+              sx={{ fontSize: 12, textTransform: "none", borderColor: colors.border, color: colors.ink2, borderRadius: "8px", "&:hover": { borderColor: colors.borderStrong } }}
+            >
+              Download template
+            </Button>
+            {lastUploadName && (
+              <Typography fontSize={11} color={colors.ink4} noWrap maxWidth={160} title={lastUploadName}>
+                Last upload &middot; {lastUploadName} &middot; {lastUploadTime}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+
+        {/* Step 2: Enrich */}
+        <Box sx={{ flex: 1, border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, p: "20px 22px" }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: colors.ink3, mb: 0.5 }}>Step 2</Typography>
+          <Typography fontWeight={700} fontSize={15} color={colors.ink1} mb={1}>Enrich with public data</Typography>
+          <Typography fontSize={12} color={colors.ink3} mb={2}>
+            We scrape each company&#39;s site for decision makers, contact info, location and business type. Average time per lead: <Box component="span" fontWeight={600} color={colors.ink2}>~6 seconds</Box>.
+          </Typography>
+
+          {scrapingTaskId ? (
+            <Box>
+              <Box display="flex" justifyContent="space-between" mb={0.75}>
+                <Typography fontSize={13} fontWeight={500} color={colors.ink1}>{enrichingName}</Typography>
+                <Typography fontSize={13} fontWeight={600} color={colors.ink1}>{scrapingProgress} / {scrapingTotal}</Typography>
+              </Box>
+              <LinearProgress variant="determinate" value={enrichPct} sx={{ height: 6, borderRadius: 999, bgcolor: colors.bgSunken, "& .MuiLinearProgress-bar": { bgcolor: colors.brand, borderRadius: 999 } }} />
+              {scrapingDomain && (
+                <Typography fontSize={12} color={colors.ink3} mt={0.75}>
+                  Now processing &middot; <Box component="span" fontWeight={500} color={colors.ink2}>{scrapingDomain}</Box>
+                </Typography>
+              )}
+            </Box>
+          ) : (
+            <Box display="flex" gap={1.5}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<AutoFixHigh sx={{ fontSize: "14px !important" }} />}
+                disabled={enrichMutation.isPending}
+                onClick={() => enrichMutation.mutate(selected.size > 0 ? Array.from(selected) : undefined)}
+                sx={{ textTransform: "none", fontSize: 12, fontWeight: 600, px: 2, bgcolor: colors.brand, "&:hover": { bgcolor: colors.brandInk }, borderRadius: "8px" }}
+              >
+                {selected.size > 0 ? `Enrich ${selected.size} selected` : "Enrich all"}
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<Download sx={{ fontSize: "14px !important" }} />}
+                onClick={() => handleExport("csv")}
+                sx={{ textTransform: "none", fontSize: 12, borderColor: colors.border, color: colors.ink2, borderRadius: "8px" }}
+              >
+                Export CSV
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<Download sx={{ fontSize: "14px !important" }} />}
+                onClick={() => handleExport("xlsx")}
+                sx={{ textTransform: "none", fontSize: 12, borderColor: colors.border, color: colors.ink2, borderRadius: "8px" }}
+              >
+                Export XLSX
+              </Button>
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {/* Filters row */}
+      <Box display="flex" gap={1} mb={1.5} flexWrap="wrap" alignItems="center">
+        {/* Search */}
+        <Box sx={{ position: "relative", flex: "0 0 280px" }}>
+          <Search sx={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: colors.ink4 }} />
+          <Box
+            component="input"
+            value={search}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by company, website, contact\u2026"
+            sx={{
+              width: "100%",
+              height: 34,
+              pl: "32px",
+              pr: "32px",
+              border: `1px solid ${colors.border}`,
+              borderRadius: "8px",
+              bgcolor: colors.bgElev,
+              fontSize: 12,
+              color: colors.ink1,
+              outline: "none",
+              fontFamily: "inherit",
+              "&:focus": { borderColor: colors.brand, boxShadow: `0 0 0 2px ${colors.brandRing}` },
+              "&::placeholder": { color: colors.ink4 },
+            }}
+          />
+          <Typography sx={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: colors.ink4, fontFamily: "monospace", lineHeight: 1, border: `1px solid ${colors.border}`, borderRadius: "4px", px: 0.5, py: 0.25 }}>
+            /
+          </Typography>
+        </Box>
+
+        <FilterPill label="Status"        value={filterStatus}  options={statusOptions.map((s) => STATUS_LABEL[s] ?? s)} onChange={(v) => { setFilterStatus(Object.entries(STATUS_LABEL).find(([, l]) => l === v)?.[0] ?? v); setPage(1); }} />
+        <FilterPill label="Niche"         value={filterNiche}   options={niches}    onChange={(v) => { setFilterNiche(v); setPage(1); }} />
+        <FilterPill label="Location"      value={filterLoc}     options={locations} onChange={(v) => { setFilterLoc(v); setPage(1); }} />
+        <FilterPill label="Business type" value={filterBizType} options={bizTypes}  onChange={(v) => { setFilterBizType(v); setPage(1); }} />
+
+        <Box flex={1} />
+
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<Add sx={{ fontSize: "14px !important" }} />}
+          onClick={() => setAddOpen(true)}
+          sx={{ textTransform: "none", fontSize: 12, fontWeight: 600, px: 2, bgcolor: colors.brand, "&:hover": { bgcolor: colors.brandInk }, borderRadius: "8px", flexShrink: 0 }}
+        >
+          Add lead
+        </Button>
+      </Box>
+
+      {/* Selection bar */}
+      {selected.size > 0 && (
+        <Box
+          display="flex"
+          alignItems="center"
+          gap={1.5}
+          sx={{
+            px: 2,
+            py: 1,
+            mb: 1,
+            bgcolor: colors.brandSoft,
+            border: `1px solid ${colors.brandSoft2}`,
+            borderRadius: "10px",
+          }}
+        >
+          <Typography fontSize={13} fontWeight={500} color={colors.brandInk}>
+            {selected.size} lead{selected.size !== 1 ? "s" : ""} selected &middot; of {totalCount} total
+          </Typography>
+          <Box flex={1} />
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AutoFixHigh sx={{ fontSize: "13px !important" }} />}
+            disabled={enrichMutation.isPending}
+            onClick={() => enrichMutation.mutate(Array.from(selected))}
+            sx={{ textTransform: "none", fontSize: 12, bgcolor: colors.green, "&:hover": { bgcolor: "#24714a" }, borderRadius: "7px", px: 1.5 }}
+          >
+            Enrich selected
           </Button>
-        </Toolbar>
+          {onSendToSelected && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<Send sx={{ fontSize: "13px !important" }} />}
+              onClick={handleBroadcast}
+              sx={{ textTransform: "none", fontSize: 12, borderColor: colors.brand, color: colors.brand, borderRadius: "7px", px: 1.5 }}
+            >
+              Send to broadcast
+            </Button>
+          )}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<Delete sx={{ fontSize: "13px !important" }} />}
+            onClick={() => bulkDeleteMutation.mutate(Array.from(selected))}
+            sx={{ textTransform: "none", fontSize: 12, borderColor: colors.red, color: colors.red, borderRadius: "7px", px: 1.5 }}
+          >
+            Delete
+          </Button>
+        </Box>
       )}
 
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small" stickyHeader>
-          <TableHead>
-            <TableRow>
-              <TableCell padding="checkbox">
-                <Checkbox
-                  indeterminate={someSelected && !allSelected}
-                  checked={allSelected}
-                  onChange={toggleAll}
-                />
-              </TableCell>
-              <TableCell>Company</TableCell>
-              <TableCell>Niche</TableCell>
-              <TableCell>Location</TableCell>
-              <TableCell>Address</TableCell>
-              <TableCell>Owner / Contact</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell>Phone</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filtered.length === 0 && (
+      {/* Table */}
+      <Box sx={{ border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, overflow: "hidden", boxShadow: shadow.sh1 }}>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={11} sx={{ p: 0, border: 0 }}>
-                  <EmptyState
-                    icon={<StorageOutlined />}
-                    tone="brand"
-                    title="No leads found"
-                    description="Upload a CSV/XLSX file or add a lead manually to get started."
-                  />
+                <TableCell padding="checkbox" sx={{ pl: 2, bgcolor: colors.bgSunken }}>
+                  <Checkbox size="small" checked={allPageSelected} indeterminate={selected.size > 0 && !allPageSelected} onChange={toggleAll} sx={{ color: colors.border, "&.Mui-checked, &.MuiCheckbox-indeterminate": { color: colors.brand } }} />
                 </TableCell>
+                {["Company", "Niche", "Location", "Owner / Contact", "Email", "Type", "Status", "", ""].map((h, i) => (
+                  <TableCell key={i} sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: colors.ink3, py: 1.25, bgcolor: colors.bgSunken, whiteSpace: "nowrap" }}>
+                    {h}
+                  </TableCell>
+                ))}
               </TableRow>
-            )}
-            {filtered.map((company) => {
-              const primary = getPrimaryContact(company.contacts);
-              const isSelected = selected.includes(company.id);
-              return (
-                <TableRow
-                  key={company.id}
-                  hover
-                  selected={isSelected}
-                  sx={{ cursor: "pointer" }}
-                  onClick={() => toggle(company.id)}
-                >
-                  <TableCell
-                    padding="checkbox"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Checkbox
-                      checked={isSelected}
-                      onChange={() => toggle(company.id)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>
-                      {company.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      <a
-                        href={company.website}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {company.website.replace(/^https?:\/\//, "")}
-                      </a>
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    {company.niche ? <StatusChip label={company.niche} /> : "—"}
-                  </TableCell>
-                  <TableCell>{company.location || "—"}</TableCell>
-                  <TableCell
-                    sx={{
-                      maxWidth: 200,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <Tooltip title={company.address || ""}>
-                      <span>{company.address || "—"}</span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    {primary ? (
-                      <>
-                        <Typography variant="body2">
-                          {primary.name || "—"}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {primary.role}
-                        </Typography>
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {primary?.email ? (
-                      <a
-                        href={`mailto:${primary.email}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {primary.email}
-                      </a>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <StatusChip
-                      tone={
-                        company.business_type === "franchise"
-                          ? "amber"
-                          : "default"
-                      }
-                      label={
-                        company.business_type === "franchise"
-                          ? "Franchise"
-                          : "Independent"
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>{company.phone || "—"}</TableCell>
-                  <TableCell>
-                    <StatusChip
-                      tone={STATUS_TONE[company.status] ?? "default"}
-                      dot
-                      label={company.status}
-                    />
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Edit lead">
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        onClick={() => openEdit(company)}
-                      >
-                        <Edit fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete lead">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => {
-                          if (window.confirm(`Delete ${company.name}?`)) {
-                            deleteMutation.mutate(company.id);
-                            setSelected((prev) =>
-                              prev.filter((id) => id !== company.id),
-                            );
-                          }
-                        }}
-                      >
-                        <Delete fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+            </TableHead>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={10} sx={{ py: 4 }}>
+                    <LinearProgress sx={{ borderRadius: 999 }} />
                   </TableCell>
                 </TableRow>
+              ) : paginated.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} align="center" sx={{ py: 6, color: colors.ink4, fontSize: 13 }}>
+                    {search || filterStatus || filterNiche || filterLoc || filterBizType
+                      ? "No leads match your filters."
+                      : "No leads yet \u2014 upload a spreadsheet to get started."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginated.map((co) => {
+                  const primary = getPrimary(co.contacts);
+                  const inits   = initials(co.name);
+                  const bg      = avatarColor(inits);
+                  const domain  = cleanDomain(co.website || "");
+                  const statusLabel = STATUS_LABEL[co.status] ?? co.status;
+                  const tone = STATUS_TONE[co.status] ?? "default";
+                  return (
+                    <TableRow
+                      key={co.id}
+                      hover
+                      selected={selected.has(co.id)}
+                      sx={{ "& td": { py: 1.25, borderBottom: `1px solid ${colors.borderSubtle}` }, cursor: "default" }}
+                    >
+                      <TableCell padding="checkbox" sx={{ pl: 2 }}>
+                        <Checkbox size="small" checked={selected.has(co.id)} onChange={() => toggleRow(co.id)} sx={{ color: colors.border, "&.Mui-checked": { color: colors.brand } }} />
+                      </TableCell>
+
+                      {/* Company */}
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={1.25}>
+                          <Box sx={{ width: 30, height: 30, borderRadius: "8px", bgcolor: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{inits}</Typography>
+                          </Box>
+                          <Box minWidth={0}>
+                            <Typography fontSize={13} fontWeight={500} color={colors.ink1} noWrap>{co.name}</Typography>
+                            <Typography fontSize={11} color={colors.ink4} noWrap>{domain}</Typography>
+                          </Box>
+                        </Box>
+                      </TableCell>
+
+                      {/* Niche */}
+                      <TableCell>
+                        {co.niche ? (
+                          <Box sx={{ display: "inline-block", px: 1, py: 0.25, bgcolor: colors.bgSunken, border: `1px solid ${colors.border}`, borderRadius: "6px" }}>
+                            <Typography sx={{ fontSize: 11, fontWeight: 500, color: colors.ink2, whiteSpace: "nowrap" }}>{co.niche}</Typography>
+                          </Box>
+                        ) : <Typography fontSize={12} color={colors.ink4}>\u2014</Typography>}
+                      </TableCell>
+
+                      {/* Location */}
+                      <TableCell>
+                        <Typography fontSize={12} color={colors.ink2} noWrap>{co.location || "\u2014"}</Typography>
+                      </TableCell>
+
+                      {/* Owner / Contact */}
+                      <TableCell>
+                        {primary ? (
+                          <>
+                            <Typography fontSize={13} fontWeight={500} color={colors.ink1} noWrap>{primary.name || "\u2014"}</Typography>
+                            <Typography fontSize={11} color={colors.ink3} noWrap>{primary.role}</Typography>
+                          </>
+                        ) : <Typography fontSize={12} color={colors.ink4}>\u2014</Typography>}
+                      </TableCell>
+
+                      {/* Email */}
+                      <TableCell sx={{ maxWidth: 180 }}>
+                        <Typography fontSize={12} color={colors.ink2} noWrap title={primary?.email || ""}>{primary?.email || "\u2014"}</Typography>
+                      </TableCell>
+
+                      {/* Type */}
+                      <TableCell>
+                        <Box sx={{ display: "inline-block", px: 1, py: 0.25, bgcolor: co.business_type === "franchise" ? colors.amberSoft : colors.bgSunken, border: `1px solid ${co.business_type === "franchise" ? colors.amberSoft : colors.border}`, borderRadius: "6px" }}>
+                          <Typography sx={{ fontSize: 11, fontWeight: 500, color: co.business_type === "franchise" ? colors.amber : colors.ink3, whiteSpace: "nowrap" }}>
+                            {co.business_type === "franchise" ? "Franchise" : "Independent"}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell>
+                        <StatusChip tone={tone} dot label={statusLabel} />
+                      </TableCell>
+
+                      {/* Edit */}
+                      <TableCell sx={{ width: 36, pr: 0 }}>
+                        <IconButton size="small" onClick={() => openEdit(co)} sx={{ color: colors.ink4, "&:hover": { color: colors.ink2 } }}>
+                          <Edit sx={{ fontSize: 15 }} />
+                        </IconButton>
+                      </TableCell>
+
+                      {/* Delete */}
+                      <TableCell sx={{ width: 36, pl: 0 }}>
+                        <IconButton size="small" onClick={() => deleteMutation.mutate(co.id)} sx={{ color: colors.ink4, "&:hover": { color: colors.red } }}>
+                          <Delete sx={{ fontSize: 15 }} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Pagination */}
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 3, py: 1.5, borderTop: `1px solid ${colors.border}` }}>
+          <Typography fontSize={12} color={colors.ink3}>
+            Showing {Math.min((page - 1) * PER_PAGE + 1, totalCount)}&ndash;{Math.min(page * PER_PAGE, totalCount)} of {totalCount} leads
+          </Typography>
+          <Box display="flex" alignItems="center" gap={0.5}>
+            <IconButton size="small" disabled={page === 1} onClick={() => setPage((p) => p - 1)} sx={{ color: colors.ink3, "&:disabled": { opacity: 0.35 } }}>
+              <ArrowBack sx={{ fontSize: 15 }} />
+            </IconButton>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              const p = totalPages <= 5 ? i + 1 : page <= 3 ? i + 1 : page >= totalPages - 2 ? totalPages - 4 + i : page - 2 + i;
+              return (
+                <Button
+                  key={p}
+                  size="small"
+                  onClick={() => setPage(p)}
+                  sx={{
+                    minWidth: 30, height: 30, p: 0, fontSize: 12, fontWeight: 500, borderRadius: "7px",
+                    bgcolor: p === page ? colors.brand : "transparent",
+                    color: p === page ? "#fff" : colors.ink2,
+                    "&:hover": { bgcolor: p === page ? colors.brandInk : colors.bgSunken },
+                  }}
+                >
+                  {p}
+                </Button>
               );
             })}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      {/* ── Edit Lead Dialog ──────────────────────────────────────────── */}
-      <Dialog
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Box display="flex" alignItems="center" gap={1}>
-            <Edit color="primary" />
-            Edit Lead — {editCompany?.name}
+            <IconButton size="small" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)} sx={{ color: colors.ink3, "&:disabled": { opacity: 0.35 } }}>
+              <ArrowForward sx={{ fontSize: 15 }} />
+            </IconButton>
           </Box>
-        </DialogTitle>
-        <DialogContent dividers>
-          <Box display="flex" flexDirection="column" gap={2}>
-            <Typography variant="overline" color="primary" display="block">
-              Company Info
-            </Typography>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                required
-                label="Company Name"
-                value={editForm.name}
-                onChange={(e) => handleEditField("name", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Website"
-                placeholder="https://example.com"
-                value={editForm.website}
-                onChange={(e) => handleEditField("website", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label="Industry / Niche"
-                value={editForm.niche}
-                onChange={(e) => handleEditField("niche", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Location"
-                placeholder="e.g. Baltimore, MD"
-                value={editForm.location}
-                onChange={(e) => handleEditField("location", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label="Address"
-                value={editForm.address}
-                onChange={(e) => handleEditField("address", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Phone"
-                value={editForm.phone}
-                onChange={(e) => handleEditField("phone", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <FormControl size="small" fullWidth>
-              <InputLabel>Business Type</InputLabel>
-              <Select
-                value={editForm.business_type}
-                label="Business Type"
-                onChange={(e) =>
-                  handleEditField("business_type", e.target.value)
-                }
-              >
-                <MenuItem value="independent">
-                  Independent / Small Business
-                </MenuItem>
-                <MenuItem value="franchise">
-                  Franchise / Corporate Chain
-                </MenuItem>
-              </Select>
-            </FormControl>
+        </Box>
+      </Box>
 
-            <Divider />
-
-            <Typography variant="overline" color="primary" display="block">
-              Owner / Contact
-            </Typography>
-            <Box display="flex" gap={2}>
+      {/* Edit dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: "14px" } }}>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: 16, pb: 1 }}>Edit lead</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+            {[
+              { key: "name",     label: "Company name",  required: true },
+              { key: "website",  label: "Website" },
+              { key: "niche",    label: "Niche" },
+              { key: "location", label: "Location" },
+              { key: "phone",    label: "Phone" },
+              { key: "ceo_name", label: "Contact name" },
+              { key: "ceo_email",label: "Contact email" },
+            ].map(({ key, label, required }) => (
               <TextField
-                fullWidth
-                label="Owner / CEO Full Name"
-                value={editForm.ceo_name}
-                onChange={(e) => handleEditField("ceo_name", e.target.value)}
+                key={key}
                 size="small"
+                label={label}
+                required={required}
+                value={(editForm as any)[key]}
+                onChange={(e) => setEditForm((p) => ({ ...p, [key]: e.target.value }))}
               />
-              <TextField
-                fullWidth
-                label="Personal Email"
-                type="email"
-                value={editForm.ceo_email}
-                onChange={(e) => handleEditField("ceo_email", e.target.value)}
-                size="small"
-              />
-            </Box>
+            ))}
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<Edit />}
-            onClick={() => updateMutation.mutate()}
-            disabled={!editForm.name || updateMutation.isPending}
-          >
-            {updateMutation.isPending ? "Saving…" : "Save Changes"}
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setEditOpen(false)} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button variant="contained" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !editForm.name} sx={{ textTransform: "none", bgcolor: colors.brand, "&:hover": { bgcolor: colors.brandInk } }}>
+            {updateMutation.isPending ? "Saving\u2026" : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* ── Manual Lead Creation Dialog ─────────────────────────────────── */}
-      <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Box display="flex" alignItems="center" gap={1}>
-            {manualForm.business_type === "franchise" ? (
-              <Store color="warning" />
-            ) : (
-              <Business color="primary" />
-            )}
-            Add Lead Manually
-          </Box>
-        </DialogTitle>
-        <DialogContent dividers>
-          {/* ── Step 1: Business Type selector (always first) ── */}
-          <Typography variant="overline" color="primary" display="block" mb={1}>
-            Step 1 — Business Type
-          </Typography>
-          <Box display="flex" gap={2} mb={1}>
-            <Paper
-              variant="outlined"
-              onClick={() => handleManualField("business_type", "independent")}
-              sx={{
-                flex: 1,
-                p: 2,
-                cursor: "pointer",
-                borderColor:
-                  manualForm.business_type === "independent"
-                    ? "primary.main"
-                    : "divider",
-                bgcolor:
-                  manualForm.business_type === "independent"
-                    ? "primary.50"
-                    : "background.paper",
-                borderWidth: manualForm.business_type === "independent" ? 2 : 1,
-              }}
-            >
-              <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                <Business
-                  fontSize="small"
-                  color={
-                    manualForm.business_type === "independent"
-                      ? "primary"
-                      : "disabled"
-                  }
-                />
-                <Typography
-                  variant="body2"
-                  fontWeight={700}
-                  color={
-                    manualForm.business_type === "independent"
-                      ? "primary"
-                      : "text.secondary"
-                  }
-                >
-                  Independent / Small Business
-                </Typography>
-              </Box>
-              <Typography variant="caption" color="text.secondary">
-                Locally owned — owner name appears on their website
-              </Typography>
-            </Paper>
-            <Paper
-              variant="outlined"
-              onClick={() => handleManualField("business_type", "franchise")}
-              sx={{
-                flex: 1,
-                p: 2,
-                cursor: "pointer",
-                borderColor:
-                  manualForm.business_type === "franchise"
-                    ? "warning.main"
-                    : "divider",
-                bgcolor:
-                  manualForm.business_type === "franchise"
-                    ? "warning.50"
-                    : "background.paper",
-                borderWidth: manualForm.business_type === "franchise" ? 2 : 1,
-              }}
-            >
-              <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                <Store
-                  fontSize="small"
-                  color={
-                    manualForm.business_type === "franchise"
-                      ? "warning"
-                      : "disabled"
-                  }
-                />
-                <Typography
-                  variant="body2"
-                  fontWeight={700}
-                  color={
-                    manualForm.business_type === "franchise"
-                      ? "warning.dark"
-                      : "text.secondary"
-                  }
-                >
-                  Franchise / Corporate Chain
-                </Typography>
-              </Box>
-              <Typography variant="caption" color="text.secondary">
-                Brand-owned site — local owner is hidden in LLC registry
-              </Typography>
-            </Paper>
-          </Box>
-
-          {/* ── Pipeline indicator — changes by type ── */}
-          <Alert
-            severity={
-              manualForm.business_type === "franchise" ? "warning" : "info"
-            }
-            icon={false}
-            sx={{ mb: 3, py: 0.5 }}
-          >
-            <Typography variant="caption" fontWeight={600}>
-              Enrichment pipeline:{" "}
-            </Typography>
-            {manualForm.business_type === "franchise" ? (
-              <Typography variant="caption">
-                <strong>SOS Registry</strong> (finds local franchisee owner) →{" "}
-                <strong>Hunter.io</strong> (finds their email) →{" "}
-                <strong>Web Search</strong> → <strong>Claude AI</strong>
-                {" · "}
-                <em>
-                  Website scraping is skipped — franchise sites belong to
-                  corporate HQ
-                </em>
-              </Typography>
-            ) : (
-              <Typography variant="caption">
-                <strong>Website Scrape</strong> (follows real page links) →{" "}
-                <strong>SOS Registry</strong> (validates owner name) →{" "}
-                <strong>Hunter.io</strong> (finds personal email) →{" "}
-                <strong>Web Search</strong> → <strong>Claude AI</strong>
-              </Typography>
-            )}
-          </Alert>
-
-          <Divider sx={{ mb: 2 }} />
-
-          {/* ── Step 2: Company Info ── */}
-          <Typography variant="overline" color="primary" display="block" mb={1}>
-            Step 2 — Company Info
-          </Typography>
-          <Box display="flex" flexDirection="column" gap={2} mb={3}>
-            <Box display="flex" gap={2}>
+      {/* Add lead dialog */}
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: "14px" } }}>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: 16, pb: 1 }}>Add lead manually</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+            {[
+              { key: "name",          label: "Company name",  required: true },
+              { key: "website",       label: "Website" },
+              { key: "niche",         label: "Niche" },
+              { key: "location",      label: "Location" },
+              { key: "phone",         label: "Phone" },
+              { key: "ceo_name",      label: "Contact name" },
+              { key: "ceo_email",     label: "Contact email" },
+              { key: "email_subject", label: "Email subject (optional)" },
+              { key: "email_body",    label: "Email body (optional)", multiline: true },
+            ].map(({ key, label, required, multiline }) => (
               <TextField
-                fullWidth
-                required
-                label={
-                  manualForm.business_type === "franchise"
-                    ? "Franchise Location Name"
-                    : "Company Name"
-                }
-                placeholder={
-                  manualForm.business_type === "franchise"
-                    ? "e.g. Dogtopia Towson MD"
-                    : "e.g. Smith Veterinary Clinic"
-                }
-                helperText={
-                  manualForm.business_type === "franchise"
-                    ? "Include the brand name + city/location for accurate SOS registry matching"
-                    : ""
-                }
-                value={manualForm.name}
-                onChange={(e) => handleManualField("name", e.target.value)}
+                key={key}
                 size="small"
+                label={label}
+                required={required}
+                multiline={multiline}
+                minRows={multiline ? 3 : undefined}
+                value={(addForm as any)[key]}
+                onChange={(e) => setAddForm((p) => ({ ...p, [key]: e.target.value }))}
               />
-              <TextField
-                fullWidth
-                label={
-                  manualForm.business_type === "franchise"
-                    ? "Franchise Website (optional)"
-                    : "Website"
-                }
-                placeholder="https://example.com"
-                helperText={
-                  manualForm.business_type === "franchise"
-                    ? "Used for web search context only — not scraped for owner info"
-                    : ""
-                }
-                value={manualForm.website}
-                onChange={(e) => handleManualField("website", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label="Industry / Niche"
-                value={manualForm.niche}
-                onChange={(e) => handleManualField("niche", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Location"
-                placeholder="e.g. Baltimore, MD"
-                helperText={
-                  manualForm.business_type === "franchise"
-                    ? "Helps narrow SOS registry search to the right state"
-                    : ""
-                }
-                value={manualForm.location}
-                onChange={(e) => handleManualField("location", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label="Address"
-                value={manualForm.address}
-                onChange={(e) => handleManualField("address", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Phone"
-                value={manualForm.phone}
-                onChange={(e) => handleManualField("phone", e.target.value)}
-                size="small"
-              />
-            </Box>
-          </Box>
-
-          <Divider sx={{ mb: 2 }} />
-
-          {/* ── Step 3: Contact — label differs by type ── */}
-          <Typography variant="overline" color="primary" display="block" mb={1}>
-            Step 3 —{" "}
-            {manualForm.business_type === "franchise"
-              ? "Local Franchisee / Owner (if already known)"
-              : "CEO / Owner (if already known)"}
-          </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            display="block"
-            mb={2}
-          >
-            {manualForm.business_type === "franchise"
-              ? "Leave blank — the pipeline will find the local owner from the SOS registry and Hunter.io automatically."
-              : "Leave blank — the pipeline will find the owner name and personal email automatically."}
-          </Typography>
-          <Box display="flex" flexDirection="column" gap={2} mb={3}>
-            <Box display="flex" gap={2}>
-              <TextField
-                fullWidth
-                label={
-                  manualForm.business_type === "franchise"
-                    ? "Franchisee Full Name"
-                    : "Owner / CEO Full Name"
-                }
-                value={manualForm.ceo_name}
-                onChange={(e) => handleManualField("ceo_name", e.target.value)}
-                size="small"
-              />
-              <TextField
-                fullWidth
-                label="Personal Email"
-                type="email"
-                value={manualForm.ceo_email}
-                onChange={(e) => handleManualField("ceo_email", e.target.value)}
-                size="small"
-                helperText="Personal email (firstname@domain.com) gives best deliverability"
-              />
-            </Box>
-            <TextField
-              label="Contact Phone"
-              value={manualForm.ceo_phone}
-              onChange={(e) => handleManualField("ceo_phone", e.target.value)}
-              size="small"
-              sx={{ maxWidth: "50%" }}
-            />
-          </Box>
-
-          <Divider sx={{ mb: 2 }} />
-
-          {/* ── Step 4: Email Draft ── */}
-          <Typography variant="overline" color="primary" display="block" mb={1}>
-            Step 4 — Email Draft (optional — skip to draft later)
-          </Typography>
-          <Box display="flex" flexDirection="column" gap={2}>
-            <TextField
-              fullWidth
-              label="Email Subject"
-              value={manualForm.email_subject}
-              onChange={(e) =>
-                handleManualField("email_subject", e.target.value)
-              }
-              size="small"
-            />
-            <TextField
-              fullWidth
-              multiline
-              minRows={5}
-              label="Email Body (HTML or plain text)"
-              value={manualForm.email_body}
-              onChange={(e) => handleManualField("email_body", e.target.value)}
-              size="small"
-              placeholder={`Hi {{ceo_name}},\n\nI noticed that...\n\nBest regards,\n{{sender_name}}`}
-            />
+            ))}
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color={
-              manualForm.business_type === "franchise" ? "warning" : "success"
-            }
-            onClick={() => createManualMutation.mutate()}
-            disabled={!manualForm.name || createManualMutation.isPending}
-          >
-            {createManualMutation.isPending ? "Creating…" : "Create Lead"}
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setAddOpen(false)} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button variant="contained" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !addForm.name} sx={{ textTransform: "none", bgcolor: colors.brand, "&:hover": { bgcolor: colors.brandInk } }}>
+            {createMutation.isPending ? "Adding\u2026" : "Add lead"}
           </Button>
         </DialogActions>
       </Dialog>

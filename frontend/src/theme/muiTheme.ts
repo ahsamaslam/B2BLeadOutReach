@@ -26,8 +26,8 @@ export const theme = createTheme({
     },
     success: { main: colors.green, light: colors.greenSoft, dark: "#226e48" },
     warning: { main: colors.amber, light: colors.amberSoft, dark: "#955a0d" },
-    error:   { main: colors.red,   light: colors.redSoft,   dark: "#9b342f" },
-    info:    { main: colors.violet,light: colors.violetSoft,dark: "#5d3995" },
+    error: { main: colors.red, light: colors.redSoft, dark: "#9b342f" },
+    info: { main: colors.violet, light: colors.violetSoft, dark: "#5d3995" },
     background: {
       default: colors.bg,
       paper: colors.bgElev,
@@ -39,7 +39,7 @@ export const theme = createTheme({
     },
     divider: colors.border,
     grey: {
-      50:  colors.bgTinted,
+      50: colors.bgTinted,
       100: colors.bgSunken,
       200: colors.borderSubtle,
       300: colors.border,
@@ -54,14 +54,34 @@ export const theme = createTheme({
   typography: {
     fontFamily: typography.sans,
     htmlFontSize: 16,
-    h1: { fontSize: 36, lineHeight: 1.1,  letterSpacing: "-0.025em", fontWeight: 600 },
-    h2: { fontSize: 28, lineHeight: 1.15, letterSpacing: "-0.022em", fontWeight: 600 },
-    h3: { fontSize: 20, lineHeight: 1.25, letterSpacing: "-0.014em", fontWeight: 600 },
-    h4: { fontSize: 16, lineHeight: 1.35, letterSpacing: "-0.008em", fontWeight: 600 },
-    h5: { fontSize: 14, lineHeight: 1.4,  fontWeight: 600 },
-    body1:    { fontSize: 14, lineHeight: 1.5 },
-    body2:    { fontSize: 13, lineHeight: 1.45, color: colors.ink2 },
-    caption:  { fontSize: 12, lineHeight: 1.4,  color: colors.ink3 },
+    h1: {
+      fontSize: 36,
+      lineHeight: 1.1,
+      letterSpacing: "-0.025em",
+      fontWeight: 600,
+    },
+    h2: {
+      fontSize: 28,
+      lineHeight: 1.15,
+      letterSpacing: "-0.022em",
+      fontWeight: 600,
+    },
+    h3: {
+      fontSize: 20,
+      lineHeight: 1.25,
+      letterSpacing: "-0.014em",
+      fontWeight: 600,
+    },
+    h4: {
+      fontSize: 16,
+      lineHeight: 1.35,
+      letterSpacing: "-0.008em",
+      fontWeight: 600,
+    },
+    h5: { fontSize: 14, lineHeight: 1.4, fontWeight: 600 },
+    body1: { fontSize: 14, lineHeight: 1.5 },
+    body2: { fontSize: 13, lineHeight: 1.45, color: colors.ink2 },
+    caption: { fontSize: 12, lineHeight: 1.4, color: colors.ink3 },
     overline: {
       fontFamily: typography.mono,
       fontSize: 11,
@@ -70,19 +90,41 @@ export const theme = createTheme({
       color: colors.ink3,
       fontWeight: 500,
     },
-    button:   { textTransform: "none", fontWeight: 500, letterSpacing: "-0.005em" },
+    button: {
+      textTransform: "none",
+      fontWeight: 500,
+      letterSpacing: "-0.005em",
+    },
   },
 
   shape: { borderRadius: radius.md },
 
   shadows: [
     "none",
-    shadow.sh1, shadow.sh1, shadow.sh1,
-    shadow.sh2, shadow.sh2, shadow.sh2, shadow.sh2,
-    shadow.sh3, shadow.sh3, shadow.sh3, shadow.sh3,
-    shadow.shPop, shadow.shPop, shadow.shPop, shadow.shPop,
-    shadow.shPop, shadow.shPop, shadow.shPop, shadow.shPop,
-    shadow.shPop, shadow.shPop, shadow.shPop, shadow.shPop, shadow.shPop,
+    shadow.sh1,
+    shadow.sh1,
+    shadow.sh1,
+    shadow.sh2,
+    shadow.sh2,
+    shadow.sh2,
+    shadow.sh2,
+    shadow.sh3,
+    shadow.sh3,
+    shadow.sh3,
+    shadow.sh3,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
+    shadow.shPop,
   ] as any,
 
   components: {
@@ -106,13 +148,21 @@ export const theme = createTheme({
           letterSpacing: "-0.005em",
           boxShadow: shadow.sh1,
         },
-        sizeSmall: { height: 30, paddingInline: 10, fontSize: 12.5, borderRadius: radius.sm },
+        sizeSmall: {
+          height: 30,
+          paddingInline: 10,
+          fontSize: 12.5,
+          borderRadius: radius.sm,
+        },
         sizeLarge: { height: 42, paddingInline: 18, fontSize: 14.5 },
         outlined: {
           backgroundColor: colors.bgElev,
           color: colors.ink1,
           borderColor: colors.border,
-          "&:hover": { backgroundColor: colors.bgTinted, borderColor: colors.borderStrong },
+          "&:hover": {
+            backgroundColor: colors.bgTinted,
+            borderColor: colors.borderStrong,
+          },
         },
         contained: {
           backgroundColor: colors.ink1,
@@ -146,13 +196,17 @@ export const theme = createTheme({
             borderWidth: 1,
           },
           "&.Mui-focused": { boxShadow: `0 0 0 3px ${colors.brandRing}` },
-          "&.Mui-error.Mui-focused": { boxShadow: `0 0 0 3px ${alpha(colors.red, 0.12)}` },
+          "&.Mui-error.Mui-focused": {
+            boxShadow: `0 0 0 3px ${alpha(colors.red, 0.12)}`,
+          },
         },
         input: { padding: "10px 12px", height: "auto" },
       },
     },
     MuiInputLabel: {
-      styleOverrides: { root: { fontSize: 12.5, color: colors.ink2, fontWeight: 500 } },
+      styleOverrides: {
+        root: { fontSize: 12.5, color: colors.ink2, fontWeight: 500 },
+      },
     },
     MuiTextField: {
       defaultProps: { size: "small" },
@@ -173,7 +227,11 @@ export const theme = createTheme({
     MuiCard: {
       defaultProps: { variant: "outlined" },
       styleOverrides: {
-        root: { borderRadius: radius.lg, borderColor: colors.border, backgroundImage: "none" },
+        root: {
+          borderRadius: radius.lg,
+          borderColor: colors.border,
+          backgroundImage: "none",
+        },
       },
     },
 
@@ -186,15 +244,37 @@ export const theme = createTheme({
           fontSize: 11.5,
           fontWeight: 500,
           borderRadius: 999,
+          "&.MuiChip-colorDefault": {
+            backgroundColor: colors.bgSunken,
+            color: colors.ink2,
+          },
+          "&.MuiChip-colorPrimary": {
+            backgroundColor: colors.brandSoft,
+            color: colors.brandInk,
+          },
+          "&.MuiChip-colorSuccess": {
+            backgroundColor: colors.greenSoft,
+            color: colors.green,
+          },
+          "&.MuiChip-colorWarning": {
+            backgroundColor: colors.amberSoft,
+            color: colors.amber,
+          },
+          "&.MuiChip-colorError": {
+            backgroundColor: colors.redSoft,
+            color: colors.red,
+          },
+          "&.MuiChip-colorInfo": {
+            backgroundColor: colors.violetSoft,
+            color: colors.violet,
+          },
         },
         sizeSmall: { height: 22 },
-        colorDefault: { backgroundColor: colors.bgSunken, color: colors.ink2 },
-        colorPrimary: { backgroundColor: colors.brandSoft, color: colors.brandInk },
-        colorSuccess: { backgroundColor: colors.greenSoft, color: colors.green },
-        colorWarning: { backgroundColor: colors.amberSoft, color: colors.amber },
-        colorError:   { backgroundColor: colors.redSoft,   color: colors.red },
-        colorInfo:    { backgroundColor: colors.violetSoft,color: colors.violet },
-        outlined: { backgroundColor: "transparent", borderColor: colors.borderStrong, color: colors.ink2 },
+        outlined: {
+          backgroundColor: "transparent",
+          borderColor: colors.borderStrong,
+          color: colors.ink2,
+        },
       },
     },
 
@@ -216,7 +296,10 @@ export const theme = createTheme({
     },
     MuiTableCell: {
       styleOverrides: {
-        root: { borderBottom: `1px solid ${colors.borderSubtle}`, padding: "14px" },
+        root: {
+          borderBottom: `1px solid ${colors.borderSubtle}`,
+          padding: "14px",
+        },
       },
     },
     MuiTableRow: {
@@ -233,7 +316,12 @@ export const theme = createTheme({
     },
     MuiTooltip: {
       styleOverrides: {
-        tooltip: { backgroundColor: colors.ink1, fontSize: 11.5, padding: "6px 8px", borderRadius: radius.sm },
+        tooltip: {
+          backgroundColor: colors.ink1,
+          fontSize: 11.5,
+          padding: "6px 8px",
+          borderRadius: radius.sm,
+        },
         arrow: { color: colors.ink1 },
       },
     },
@@ -242,19 +330,32 @@ export const theme = createTheme({
     MuiAppBar: {
       defaultProps: { color: "transparent", elevation: 0 },
       styleOverrides: {
-        root: { background: colors.bg, borderBottom: `1px solid ${colors.border}`, color: colors.ink1 },
+        root: {
+          background: colors.bg,
+          borderBottom: `1px solid ${colors.border}`,
+          color: colors.ink1,
+        },
       },
     },
     MuiTab: {
-      styleOverrides: { root: { textTransform: "none", fontWeight: 500, minHeight: 44 } },
+      styleOverrides: {
+        root: { textTransform: "none", fontWeight: 500, minHeight: 44 },
+      },
     },
 
     /* Misc */
-    MuiDivider: { styleOverrides: { root: { borderColor: colors.borderSubtle } } },
+    MuiDivider: {
+      styleOverrides: { root: { borderColor: colors.borderSubtle } },
+    },
     MuiSwitch: {
       styleOverrides: {
         track: { backgroundColor: colors.borderStrong, opacity: 1 },
-        switchBase: { "&.Mui-checked + .MuiSwitch-track": { backgroundColor: colors.brand, opacity: 1 } },
+        switchBase: {
+          "&.Mui-checked + .MuiSwitch-track": {
+            backgroundColor: colors.brand,
+            opacity: 1,
+          },
+        },
       },
     },
   },

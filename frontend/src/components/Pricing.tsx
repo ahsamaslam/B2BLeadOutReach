@@ -12,7 +12,7 @@ import {
   ListItemText,
   Typography,
 } from "@mui/material";
-import { Check, Star } from "@mui/icons-material";
+import { Check } from "@mui/icons-material";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { PageHeader, StatusChip } from "./primitives";
