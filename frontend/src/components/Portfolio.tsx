@@ -1,4 +1,5 @@
 import React, { useRef } from "react";
+import { PageLoader } from "./primitives";
 import {
   Box,
   Card,
@@ -115,6 +116,8 @@ export default function Portfolio() {
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };
+
+  if (isLoading) return <PageLoader label="Loading files…" />;
 
   return (
     <Box sx={{ maxWidth: 800, mx: "auto", mt: 4, px: 2 }}>

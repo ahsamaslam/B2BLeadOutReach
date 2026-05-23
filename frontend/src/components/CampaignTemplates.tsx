@@ -24,6 +24,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { PageLoader } from "./primitives";
 import { colors, shadow } from "../theme/tokens";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -572,9 +573,10 @@ function EditorPanel({
   return (
     <Box
       sx={{
-        width: 360,
+        width: { xs: "100%", md: 360 },
         flexShrink: 0,
-        borderLeft: `1px solid ${colors.border}`,
+        borderLeft: { xs: "none", md: `1px solid ${colors.border}` },
+        borderTop: { xs: `1px solid ${colors.border}`, md: "none" },
         bgcolor: colors.bgElev,
         display: "flex",
         flexDirection: "column",
@@ -1053,13 +1055,17 @@ const CampaignTemplates: React.FC = () => {
   const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
   const isNew = selectedId === "new";
 
+  if (isLoading) return <PageLoader label="Loading templates…" />;
+
   return (
     /* The Shell is in flush mode for this page — no outer padding */
     <Box
       sx={{
         display: "flex",
-        height: "calc(100vh - 56px)" /* 100vh minus the 56px TopBar */,
-        overflow: "hidden",
+        flexDirection: { xs: "column", md: "row" },
+        height: { xs: "auto", md: "calc(100vh - 56px)" },
+        minHeight: { xs: "100%", md: "unset" },
+        overflow: { xs: "visible", md: "hidden" },
         bgcolor: colors.bg,
       }}
     >

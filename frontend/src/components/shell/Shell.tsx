@@ -1,5 +1,5 @@
-import React from "react";
-import { Box } from "@mui/material";
+import React, { useState } from "react";
+import { Box, Drawer, useMediaQuery, useTheme } from "@mui/material";
 import { Sidebar, NavId, SidebarProps } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { colors } from "../../theme/tokens";
@@ -47,26 +47,64 @@ export const Shell: React.FC<ShellProps> = ({
   flush,
   adminTenantCount,
   ...sidebarProps
-}) => (
-  <Box
-    sx={{ display: "flex", width: "100%", height: "100vh", bgcolor: colors.bg }}
-  >
-    <Sidebar {...sidebarProps} adminTenantCount={adminTenantCount} />
+}) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
     <Box
       sx={{
-        flex: 1,
         display: "flex",
-        flexDirection: "column",
-        minWidth: 0,
+        width: "100%",
+        height: "100vh",
         bgcolor: colors.bg,
       }}
     >
-      <TopBar crumb={crumb} actions={topBarActions} hideSearch={hideSearch} />
-      <Box sx={{ flex: 1, overflow: "auto", p: flush ? 0 : 3.5 }}>
-        {children}
+      {/* Desktop: permanent sidebar */}
+      {!isMobile && (
+        <Sidebar {...sidebarProps} adminTenantCount={adminTenantCount} />
+      )}
+
+      {/* Mobile: temporary drawer */}
+      <Drawer
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        sx={{
+          display: { xs: "block", md: "none" },
+          "& .MuiDrawer-paper": { width: 232, boxSizing: "border-box" },
+        }}
+      >
+        <Sidebar
+          {...sidebarProps}
+          adminTenantCount={adminTenantCount}
+          onClose={() => setMobileOpen(false)}
+        />
+      </Drawer>
+
+      <Box
+        sx={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          bgcolor: colors.bg,
+        }}
+      >
+        <TopBar
+          crumb={crumb}
+          actions={topBarActions}
+          hideSearch={hideSearch}
+          onMenuClick={isMobile ? () => setMobileOpen(true) : undefined}
+        />
+        <Box
+          sx={{ flex: 1, overflow: "auto", p: flush ? 0 : { xs: 2, sm: 3.5 } }}
+        >
+          {children}
+        </Box>
       </Box>
     </Box>
-  </Box>
-);
+  );
+};
 
 export type { NavId };

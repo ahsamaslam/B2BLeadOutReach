@@ -37,6 +37,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { PageLoader } from "./primitives";
 import { colors } from "../theme/tokens";
 import Portfolio from "./Portfolio";
 
@@ -117,14 +118,15 @@ function SectionCard({
       </Box>
 
       {/* Body: description | fields */}
-      <Box sx={{ display: "flex" }}>
+      <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" } }}>
         {/* Left: description */}
         <Box
           sx={{
-            width: 230,
+            width: { xs: "100%", md: 230 },
             flexShrink: 0,
-            borderRight: `1px solid ${colors.border}`,
-            p: "20px 20px 24px",
+            borderRight: { xs: "none", md: `1px solid ${colors.border}` },
+            borderBottom: { xs: `1px solid ${colors.border}`, md: "none" },
+            p: { xs: "16px 20px", md: "20px 20px 24px" },
           }}
         >
           <Typography
@@ -134,7 +136,11 @@ function SectionCard({
           </Typography>
         </Box>
         {/* Right: fields */}
-        <Box sx={{ flex: 1, p: "20px 24px 24px" }}>{children}</Box>
+        <Box
+          sx={{ flex: 1, p: { xs: "16px 20px 20px", md: "20px 24px 24px" } }}
+        >
+          {children}
+        </Box>
       </Box>
     </Box>
   );
@@ -422,13 +428,7 @@ function TeamTab() {
     setTempPwd(null);
   };
 
-  if (isLoading) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: "40px" }}>
-        <CircularProgress size={22} sx={{ color: colors.brand }} />
-      </Box>
-    );
-  }
+  if (isLoading) return <PageLoader height={120} />;
 
   if (members.length === 0 && !isLoading) {
     return (
@@ -1049,20 +1049,7 @@ const Settings: React.FC = () => {
   const verifiedCount = smtpOk ? 2 : 0; // SPF + DKIM if SMTP test passed
 
   // ── Render ──
-  if (isLoading) {
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          py: "80px",
-        }}
-      >
-        <CircularProgress size={24} sx={{ color: colors.brand }} />
-      </Box>
-    );
-  }
+  if (isLoading) return <PageLoader />;
 
   return (
     <Box>
@@ -1159,6 +1146,9 @@ const Settings: React.FC = () => {
         <Tabs
           value={activeTab}
           onChange={(_, v) => setActiveTab(v)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           sx={{
             minHeight: 38,
             "& .MuiTab-root": {

@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Typography, Avatar, alpha } from "@mui/material";
+import { Box, Typography, Avatar, alpha, IconButton } from "@mui/material";
 import {
   DashboardOutlined,
   StorageOutlined,
@@ -12,6 +12,7 @@ import {
   SearchOutlined,
   LogoutOutlined,
   AutoAwesomeOutlined,
+  CloseOutlined,
   ExpandMore,
 } from "@mui/icons-material";
 import { colors } from "../../theme/tokens";
@@ -42,6 +43,7 @@ export interface SidebarProps {
   usage?: { sent: number; cap: number | null; planLabel: string };
   onLogout: () => void;
   adminTenantCount?: number;
+  onClose?: () => void;
 }
 
 const PIPELINE: {
@@ -131,6 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   usage,
   onLogout,
   adminTenantCount,
+  onClose,
 }) => {
   return (
     <Box
@@ -142,9 +145,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         borderRight: `1px solid ${colors.border}`,
         display: "flex",
         flexDirection: "column",
-        height: "100vh",
+        height: "100%",
+        minHeight: "100vh",
+        position: "relative",
       }}
     >
+      {/* Mobile close button */}
+      {onClose && (
+        <IconButton
+          onClick={onClose}
+          size="small"
+          sx={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            color: colors.ink3,
+            zIndex: 1,
+          }}
+        >
+          <CloseOutlined sx={{ fontSize: 16 }} />
+        </IconButton>
+      )}
       {/* Brand */}
       <Box
         sx={{

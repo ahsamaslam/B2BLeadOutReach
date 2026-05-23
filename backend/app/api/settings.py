@@ -351,7 +351,7 @@ def _send_team_invite_email(to_email: str, temp_password: str, company_name: str
     body_plain = (
         f"Hi,\n\n"
         f"You have been invited to join {company_name}.\n\n"
-        f"Use the credentials below to log in at http://localhost:3000:\n\n"
+        f"Use the credentials below to log in at http://182.187.139.173:3000:\n\n"
         f"  Email:              {to_email}\n"
         f"  Temporary password: {temp_password}\n\n"
         f"You will be asked to set a new password immediately after logging in.\n\n"

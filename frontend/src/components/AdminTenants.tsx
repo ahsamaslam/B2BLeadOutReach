@@ -41,7 +41,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
-import { StatCard } from "./primitives";
+import { StatCard, PageLoader } from "./primitives";
 import { colors } from "../theme/tokens";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -728,6 +728,8 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
 
   // ── Render ──
 
+  if (isLoading) return <PageLoader label="Loading tenants…" />;
+
   const CELL_SX = { fontSize: 13, color: colors.ink1, py: "13px", px: "16px" };
   const HEAD_SX = {
     fontSize: 11,
@@ -913,6 +915,7 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
           border: `1px solid ${colors.border}`,
           borderRadius: "12px",
           overflow: "hidden",
+          overflowX: "auto",
           mb: "12px",
         }}
       >
@@ -932,6 +935,7 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
             gridTemplateColumns:
               "36px 2fr 70px 100px 110px 90px 100px 90px 1fr",
             borderBottom: `1px solid ${colors.border}`,
+            minWidth: 800,
           }}
         >
           <Box sx={{ ...HEAD_SX, display: "flex", alignItems: "center" }}>
@@ -980,6 +984,7 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
                 display: "grid",
                 gridTemplateColumns:
                   "36px 2fr 70px 100px 110px 90px 100px 90px 1fr",
+                minWidth: 800,
                 borderBottom:
                   idx < items.length - 1
                     ? `1px solid ${colors.borderSubtle}`

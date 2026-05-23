@@ -8,3 +8,6 @@ export type { EmptyStateProps } from "./EmptyState";
 
 export { PageHeader } from "./PageHeader";
 export type { PageHeaderProps } from "./PageHeader";
+
+export { PageLoader } from "./PageLoader";
+export type { PageLoaderProps } from "./PageLoader";

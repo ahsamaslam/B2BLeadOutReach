@@ -38,6 +38,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { PageLoader } from "./primitives";
 import { colors } from "../theme/tokens";
 
 // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -461,6 +462,8 @@ const History: React.FC = () => {
   const totalItems = historyData?.total ?? 0;
   const tealSoft = "#d4f0ef";
 
+  if (historyLoading) return <PageLoader label="Loading history…" />;
+
   return (
     <Box
       sx={{
@@ -471,7 +474,14 @@ const History: React.FC = () => {
         bgcolor: colors.bg,
       }}
     >
-      <Box sx={{ flex: 1, overflowY: "auto", px: "28px", py: "20px" }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: "auto",
+          px: { xs: "16px", sm: "28px" },
+          py: "20px",
+        }}
+      >
         {/* â”€â”€ Page header â”€â”€ */}
         <Box
           sx={{
@@ -479,6 +489,8 @@ const History: React.FC = () => {
             alignItems: "flex-start",
             justifyContent: "space-between",
             mb: "18px",
+            flexWrap: "wrap",
+            gap: "12px",
           }}
         >
           <Box>

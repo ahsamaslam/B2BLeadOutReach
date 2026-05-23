@@ -36,7 +36,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
-import { StatusChip } from "./primitives";
+import { StatusChip, PageLoader } from "./primitives";
 import { colors, shadow } from "../theme/tokens";
 import {
   BROADCAST_LEADS_STORAGE_KEY,
@@ -436,6 +436,8 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   const enrichingName = scrapingTaskId ? `Enriching leads` : "";
   const enrichPct = scrapingTotal > 0 ? (scrapingProgress / scrapingTotal) * 100 : 0;
 
+  if (isLoading) return <PageLoader label="Loading leads…" />;
+
   return (
     <Box>
       {/* Step indicator */}
@@ -603,7 +605,7 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
       {/* Filters row */}
       <Box display="flex" gap={1} mb={1.5} flexWrap="wrap" alignItems="center">
         {/* Search */}
-        <Box sx={{ position: "relative", flex: "0 0 280px" }}>
+        <Box sx={{ position: "relative", flex: { xs: "1 1 100%", sm: "0 0 280px" } }}>
           <Search sx={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: colors.ink4 }} />
           <Box
             component="input"
@@ -703,8 +705,8 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
 
       {/* Table */}
       <Box sx={{ border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, overflow: "hidden", boxShadow: shadow.sh1 }}>
-        <TableContainer>
-          <Table size="small">
+        <TableContainer sx={{ overflowX: "auto" }}>
+          <Table size="small" sx={{ minWidth: 700 }}>
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox" sx={{ pl: 2, bgcolor: colors.bgSunken }}>

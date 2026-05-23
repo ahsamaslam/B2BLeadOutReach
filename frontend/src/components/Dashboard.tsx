@@ -22,7 +22,7 @@ import {
 } from "@mui/icons-material";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
-import { StatusChip } from "./primitives";
+import { StatusChip, PageLoader } from "./primitives";
 import { colors, shadow } from "../theme/tokens";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function StatCard({
         borderRadius: "12px",
         bgcolor: colors.bgElev,
         p: "16px 18px 14px",
-        flex: 1,
+        flex: { xs: "0 0 calc(50% - 8px)", md: 1 },
         minWidth: 0,
         display: "flex",
         flexDirection: "column",
@@ -158,11 +158,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(recentSent.map((r) => r.id)));
 
+  if (isLoading) return <PageLoader label="Loading dashboard…" />;
+
   return (
     <Box>
       {/* Header */}
       <Box mb={3}>
-        <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={2}>
+        <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={2}
+          sx={{ flexDirection: { xs: "column", sm: "row" } }}>
           <Box>
             <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.ink3, mb: 0.75 }}>
               Overview · {PERIOD_LABELS[period]}
@@ -183,7 +186,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
               </Typography>
             )}
           </Box>
-          <Box display="flex" gap={0.5} mt={0.5} flexShrink={0}>
+          <Box display="flex" gap={0.5} mt={0.5} flexShrink={0} sx={{ flexWrap: "wrap" }}>
             {(["7d", "30d", "all"] as Period[]).map((p) => (
               <Button
                 key={p}
@@ -280,13 +283,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
 
       {/* Recently sent table */}
       <Box sx={{ border: `1px solid ${colors.border}`, borderRadius: "12px", bgcolor: colors.bgElev, overflow: "hidden", boxShadow: shadow.sh1 }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+        <Box sx={{ px: { xs: 2, sm: 3 }, py: 2, borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
           <Box>
             <Typography fontWeight={700} fontSize={15} color={colors.ink1}>Recently sent</Typography>
             <Typography fontSize={12} color={colors.ink3}>Last {recentSent.length} emails leaving your workspace</Typography>
           </Box>
-          <Box display="flex" alignItems="center" gap={1}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.5, py: 0.6, border: `1px solid ${colors.border}`, borderRadius: "8px" }}>
+          <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+            <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center", gap: 0.75, px: 1.5, py: 0.6, border: `1px solid ${colors.border}`, borderRadius: "8px" }}>
               <Refresh sx={{ fontSize: 13, color: colors.ink3 }} />
               <Typography sx={{ fontSize: 12, color: colors.ink3 }}>Auto-refresh · 30s</Typography>
             </Box>
@@ -296,8 +299,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onShowHistory }) => {
             </Button>
           </Box>
         </Box>
-        <TableContainer>
-          <Table size="small">
+        <TableContainer sx={{ overflowX: "auto" }}>
+          <Table size="small" sx={{ minWidth: 600 }}>
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox" sx={{ pl: 2, bgcolor: colors.bgSunken }}>
