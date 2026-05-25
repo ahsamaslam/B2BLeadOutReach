@@ -208,11 +208,17 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
 
   // Filters + pagination
   const [search, setSearch]             = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterNiche, setFilterNiche]   = useState("");
   const [filterLoc, setFilterLoc]       = useState("");
   const [filterBizType, setFilterBizType] = useState("");
   const [page, setPage]                 = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
   const [selected, setSelected]         = useState<Set<number>>(new Set());
 
   // Last upload info (localStorage)
@@ -258,10 +264,10 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
   });
 
   const { data: companies = [], isLoading } = useQuery<Company[]>({
-    queryKey: ["companies", filterStatus, filterNiche, filterLoc, filterBizType, search],
+    queryKey: ["companies", filterStatus, filterNiche, filterLoc, filterBizType, debouncedSearch],
     queryFn: () => api.getCompanies({
       status:        filterStatus   || undefined,
-      search:        search         || undefined,
+      search:        debouncedSearch || undefined,
       niche:         filterNiche    || undefined,
       location:      filterLoc      || undefined,
       business_type: filterBizType  || undefined,
@@ -272,8 +278,9 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
 
   // Unique filter options
   const allCompanies = useQuery<Company[]>({ queryKey: ["companies"], queryFn: () => api.getCompanies({ limit: 500 }) });
-  const niches       = Array.from(new Set((allCompanies.data ?? []).map((c) => c.niche).filter(Boolean))) as string[];
-  const locations    = Array.from(new Set((allCompanies.data ?? []).map((c) => c.location).filter(Boolean))) as string[];
+  const _safeAll     = Array.isArray(allCompanies.data) ? allCompanies.data : [];
+  const niches       = Array.from(new Set(_safeAll.map((c) => c.niche).filter(Boolean))) as string[];
+  const locations    = Array.from(new Set(_safeAll.map((c) => c.location).filter(Boolean))) as string[];
   const bizTypes     = ["independent", "franchise"];
   const statusOptions = ["created", "scraping", "data_parsed", "drafted", "approved", "sent", "enriched", "pending", "error"];
 
@@ -610,7 +617,7 @@ const LeadsList: React.FC<LeadsListProps> = ({ onSendToSelected }) => {
           <Box
             component="input"
             value={search}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             placeholder="Search by company, website, contact\u2026"
             sx={{
               width: "100%",

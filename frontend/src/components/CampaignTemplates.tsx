@@ -8,6 +8,9 @@ import {
   DialogTitle,
   IconButton,
   LinearProgress,
+  Tab,
+  Tabs,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -20,6 +23,7 @@ import {
   Delete,
   Edit,
   Save,
+  UploadFile,
 } from "@mui/icons-material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -1018,12 +1022,92 @@ const CampaignTemplates: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | "new" | null>(null);
   const [starterOpen, setStarterOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importName, setImportName] = useState("");
+  const [importSubject, setImportSubject] = useState("");
+  const [importBody, setImportBody] = useState("");
+  const [importInstructions, setImportInstructions] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importIsSaving, setImportIsSaving] = useState(false);
+  const importFileRef = React.useRef<HTMLInputElement>(null);
 
-  const { data: templates = [], isLoading } = useQuery<CampaignTemplate[]>({
+  const parsePlainText = (text: string) => {
+    // Three-section format (--- separators optional):
+    //   1. HEADER  — Name: and Subject: lines at the top
+    //   2. BODY    — email content (starts after last header line or first ---)
+    //   3. INSTRUCTIONS — everything after "Instructions for AI Agent" / "Tag Definitions for AI Agent" heading or second ---
+    //
+    // The parser auto-transitions header→body on the first non-header content line,
+    // so --- separators are supported but not required.
+    const INSTR_TRIGGERS = [
+      "instructions for ai agent",
+      "tag definitions for ai agent",
+      "tag definitions:",
+    ];
+    const isInstrTrigger = (s: string) =>
+      INSTR_TRIGGERS.some((t) => s.toLowerCase().startsWith(t));
+
+    const lines = text.split("\n");
+    let name = "", subject = "";
+    const bodyLines: string[] = [];
+    const instructionLines: string[] = [];
+    type State = "header" | "body" | "instructions";
+    let state: State = "header";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // "---" separator: header→body on first hit, body→instructions on second
+      if (trimmed === "---") {
+        state = state === "header" ? "body" : "instructions";
+        continue;
+      }
+
+      // Keywords always jump to instructions regardless of current state
+      if (isInstrTrigger(trimmed)) {
+        state = "instructions";
+        continue; // skip the section-header line itself
+      }
+
+      if (state === "header") {
+        if (trimmed.toLowerCase().startsWith("name:")) {
+          name = line.slice(line.indexOf(":") + 1).trim();
+          continue;
+        }
+        if (trimmed.toLowerCase().startsWith("subject:")) {
+          subject = line.slice(line.indexOf(":") + 1).trim();
+          continue;
+        }
+        // First non-empty, non-header line → body starts (no separator needed)
+        if (trimmed) {
+          state = "body";
+          bodyLines.push(line);
+        }
+        continue;
+      }
+
+      if (state === "body") { bodyLines.push(line); continue; }
+      if (state === "instructions") { instructionLines.push(line); }
+    }
+
+    const body = bodyLines.join("\n").trim();
+    const instructions = instructionLines.join("\n").trim();
+
+    setImportName(name);
+    setImportSubject(subject);
+    setImportBody(body || (!name && !subject ? text.trim() : ""));
+    setImportInstructions(instructions);
+    if (!name && !subject) {
+      setImportError("Could not find Name: or Subject: lines. Make sure your file follows the format shown above.");
+    }
+  };
+
+  const { data: rawTemplates = [], isLoading } = useQuery<CampaignTemplate[]>({
     queryKey: ["campaignTemplates"],
     queryFn: api.getCampaignTemplates,
     refetchInterval: 30_000,
   });
+  const templates: CampaignTemplate[] = Array.isArray(rawTemplates) ? rawTemplates : [];
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteCampaignTemplate(id),
@@ -1122,6 +1206,10 @@ const CampaignTemplates: React.FC = () => {
           <Button
             variant="outlined"
             size="small"
+            startIcon={<UploadFile sx={{ fontSize: "13px !important" }} />}
+            onClick={() => {
+              setImportName(""); setImportSubject(""); setImportBody(""); setImportInstructions(""); setImportError(""); setImportOpen(true);
+            }}
             sx={{
               textTransform: "none",
               fontSize: 12,
@@ -1284,6 +1372,256 @@ const CampaignTemplates: React.FC = () => {
             sx={{ textTransform: "none" }}
           >
             Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Import Template dialog ──────────────────────────────────────────── */}
+      <Dialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: "14px" } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: 15, pb: 1 }}>
+          Import template
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+
+          {/* Format guide */}
+          <Box
+            sx={{
+              bgcolor: colors.bgSunken,
+              border: `1px solid ${colors.border}`,
+              borderRadius: "10px",
+              p: "14px",
+              mb: "16px",
+            }}
+          >
+            <Typography fontSize={12} fontWeight={700} mb="4px" color={colors.ink1}>
+              How to structure your file
+            </Typography>
+            <Typography fontSize={11} color={colors.ink3} mb="10px" lineHeight={1.6}>
+              The file has <strong>3 sections</strong>: header (name + subject) → email body → AI instructions.
+              The parser detects sections automatically — <strong>no separators required</strong>, but you can use <code>---</code> if you prefer.
+            </Typography>
+
+            {/* Plain text / Word format */}
+            <Box display="flex" alignItems="center" gap="6px" mb="3px">
+              <Typography fontSize={11} fontWeight={700} color={colors.ink2}>Plain text (.txt) or Word (.docx)</Typography>
+              <Box sx={{ px: "6px", py: "1px", bgcolor: colors.greenSoft, borderRadius: "4px" }}>
+                <Typography fontSize={10} fontWeight={600} color={colors.green}>recommended</Typography>
+              </Box>
+            </Box>
+            <Box
+              component="pre"
+              sx={{
+                fontSize: 11,
+                bgcolor: "#f8f8f8",
+                border: `1px solid ${colors.border}`,
+                borderRadius: "6px",
+                p: "10px",
+                mb: "10px",
+                overflowX: "auto",
+                fontFamily: "monospace",
+                color: colors.ink2,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.7,
+              }}
+            >{`Name: My Outreach Template
+Subject: Quick thought on {{company_name}}'s workflow
+
+Hi {{owner_name}},
+
+I noticed {{company_name}} is {{current_activity}}...
+[email body continues here]
+
+Instructions for AI Agent:
+Keep it under 90 words. Reference one concrete thing from their
+website. Friendly tone, not salesy. End with a soft question.`}</Box>
+
+            {/* JSON format */}
+            <Typography fontSize={11} fontWeight={700} color={colors.ink2} mb="3px">JSON (.json)</Typography>
+            <Box
+              component="pre"
+              sx={{
+                fontSize: 11,
+                bgcolor: "#f8f8f8",
+                border: `1px solid ${colors.border}`,
+                borderRadius: "6px",
+                p: "10px",
+                mb: "10px",
+                overflowX: "auto",
+                fontFamily: "monospace",
+                color: colors.ink2,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.7,
+              }}
+            >{`{
+  "name": "My Outreach Template",
+  "subject": "Quick thought on {{company_name}}'s workflow",
+  "body": "Hi {{owner_name}},\\n\\nYour email body here...",
+  "instructions": "Keep it under 90 words. Friendly tone."
+}`}</Box>
+
+            <Box sx={{ bgcolor: `${colors.brand}10`, border: `1px solid ${colors.border}`, borderRadius: "7px", p: "8px 10px" }}>
+              <Typography fontSize={11} fontWeight={600} color={colors.ink2} mb="2px">Section rules</Typography>
+              <Typography fontSize={11} color={colors.ink3} lineHeight={1.65}>
+                • <strong>Header</strong>: lines starting with <code>Name:</code> and <code>Subject:</code> at the top<br />
+                • <strong>Body</strong>: everything after the last header line (until instructions)<br />
+                • <strong>AI Instructions</strong>: everything after a line that starts with <em>"Instructions for AI Agent"</em> or <em>"Tag Definitions for AI Agent"</em>
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* File upload */}
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,.txt,.docx"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setImportError("");
+              try {
+                const ext = file.name.split(".").pop()?.toLowerCase();
+                if (ext === "json") {
+                  const text = await file.text();
+                  const data = JSON.parse(text);
+                  if (!data.name && !data.subject && !data.body) {
+                    setImportError("JSON must have at least a name, subject, or body field.");
+                    return;
+                  }
+                  setImportName(data.name ?? "");
+                  setImportSubject(data.subject ?? "");
+                  setImportBody(data.body ?? "");
+                  setImportInstructions(data.instructions ?? "");
+                } else if (ext === "txt") {
+                  const text = await file.text();
+                  parsePlainText(text);
+                } else if (ext === "docx") {
+                  // Use mammoth to extract text from docx
+                  const mammoth = await import("mammoth");
+                  const buffer = await file.arrayBuffer();
+                  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+                  parsePlainText(result.value);
+                } else {
+                  setImportError("Unsupported file type. Use .json, .txt, or .docx");
+                }
+              } catch (err: any) {
+                setImportError("Failed to parse file: " + (err?.message ?? "unknown error"));
+              }
+              // reset input so same file can be re-selected
+              if (importFileRef.current) importFileRef.current.value = "";
+            }}
+          />
+          <Button
+            variant="outlined"
+            size="small"
+            fullWidth
+            startIcon={<UploadFile sx={{ fontSize: "14px !important" }} />}
+            onClick={() => importFileRef.current?.click()}
+            sx={{
+              textTransform: "none",
+              fontSize: 12,
+              borderColor: colors.border,
+              color: colors.ink2,
+              borderRadius: "8px",
+              mb: "14px",
+              py: "10px",
+              borderStyle: "dashed",
+              "&:hover": { borderColor: colors.brand, color: colors.brand },
+            }}
+          >
+            Upload file (.json, .txt, .docx) — click to browse
+          </Button>
+
+          {importError && (
+            <Typography fontSize={12} color="#ef4444" mb="10px">{importError}</Typography>
+          )}
+
+          {/* Editable preview fields */}
+          <Box display="flex" flexDirection="column" gap="10px">
+            <TextField
+              size="small"
+              fullWidth
+              label="Template name"
+              value={importName}
+              onChange={(e) => setImportName(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 13 } }}
+            />
+            <TextField
+              size="small"
+              fullWidth
+              label="Subject line"
+              value={importSubject}
+              onChange={(e) => setImportSubject(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 13 } }}
+            />
+            <TextField
+              size="small"
+              fullWidth
+              multiline
+              rows={5}
+              label="Email body"
+              value={importBody}
+              onChange={(e) => setImportBody(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 13 } }}
+            />
+            <TextField
+              size="small"
+              fullWidth
+              multiline
+              rows={4}
+              label="AI Instructions (optional)"
+              placeholder="Keep it under 90 words. Friendly tone. End with a soft question..."
+              value={importInstructions}
+              onChange={(e) => setImportInstructions(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 13 } }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: "8px" }}>
+          <Button
+            onClick={() => setImportOpen(false)}
+            sx={{ textTransform: "none", fontSize: 12, color: colors.ink3 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!importName.trim() || importIsSaving}
+            onClick={async () => {
+              if (!importName.trim()) return;
+              setImportIsSaving(true);
+              try {
+                await api.createCampaignTemplate({
+                  name: importName.trim(),
+                  subject_template: importSubject.trim(),
+                  body_template: importBody.trim(),
+                  instructions: importInstructions.trim() || undefined,
+                });
+                toast.success(`Template "${importName.trim()}" imported!`);
+                queryClient.invalidateQueries({ queryKey: ["campaignTemplates"] });
+                setImportOpen(false);
+              } catch {
+                toast.error("Failed to import template");
+              } finally {
+                setImportIsSaving(false);
+              }
+            }}
+            sx={{
+              textTransform: "none",
+              fontSize: 12,
+              fontWeight: 600,
+              bgcolor: colors.brand,
+              "&:hover": { bgcolor: colors.brandInk },
+              borderRadius: "8px",
+            }}
+          >
+            {importIsSaving ? "Importing…" : "Import template"}
           </Button>
         </DialogActions>
       </Dialog>

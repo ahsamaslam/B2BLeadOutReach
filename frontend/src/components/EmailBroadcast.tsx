@@ -4,16 +4,22 @@ import {
   Button,
   Checkbox,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   MenuItem,
   Select,
   Switch,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
 import {
   AttachFile,
   AutoAwesome,
+  Bookmark,
   Check,
   Close,
   Edit,
@@ -254,8 +260,9 @@ function MetaRow({
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
+const EmailBroadcast: React.FC<{ initialSelectedIds?: number[]; initialTemplateId?: number | null }> = ({
   initialSelectedIds = [],
+  initialTemplateId = null,
 }) => {
   const queryClient = useQueryClient();
 
@@ -290,17 +297,23 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
     new Set(initialSelectedIds),
   );
   const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "">("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "">(initialTemplateId ?? "");
   const [attachPortfolio, setAttachPortfolio] = useState(false);
-  const [useAi, setUseAi] = useState(false);
+  const [useAi, setUseAi] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({
     done: 0,
     total: 0,
   });
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [campaignName, setCampaignName] = useState("");
+  const [isSavingCampaign, setIsSavingCampaign] = useState(false);
 
   // Initialise leads list from companies
   useEffect(() => {
@@ -365,6 +378,34 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
 
   const selectedList = leads.filter((l) => selectedLeadIds.has(l.company_id));
 
+  // ── Save campaign ──
+  const handleSaveCampaign = async () => {
+    if (!campaignName.trim()) return;
+    setIsSavingCampaign(true);
+    try {
+      await api.createCampaign({
+        name: campaignName.trim(),
+        template_id: selectedTemplateId ? (selectedTemplateId as number) : null,
+        company_ids: Array.from(selectedLeadIds),
+        use_ai: useAi,
+      });
+      toast.success(`Campaign "${campaignName.trim()}" saved!`);
+      setSaveDialogOpen(false);
+      setCampaignName("");
+    } catch {
+      toast.error("Failed to save campaign");
+    } finally {
+      setIsSavingCampaign(false);
+    }
+  };
+
+  // ── Stop generation ──
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
   // ── Generate mutation ──
   const handleGenerate = useCallback(async () => {
     if (!selectedTemplateId) {
@@ -376,6 +417,17 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
       toast.error("Select at least one lead");
       return;
     }
+
+    // Set up abort controller
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Start elapsed timer
+    setElapsedSeconds(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds((s) => s + 1);
+    }, 1000);
 
     setIsGenerating(true);
     setGenerateProgress({ done: 0, total: ids.length });
@@ -393,7 +445,7 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
         campaign_template_id: selectedTemplateId as number,
         attach_portfolio: attachPortfolio,
         use_ai: useAi,
-      });
+      }, controller.signal);
 
       setGenerateProgress({ done: res.generated, total: ids.length });
 
@@ -429,7 +481,11 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
         `${res.generated} draft${res.generated !== 1 ? "s" : ""} generated`,
       );
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Generation failed");
+      if (err?.code === "ERR_CANCELED" || err?.name === "CanceledError" || err?.name === "AbortError") {
+        toast("Generation stopped", { icon: "⏹" });
+      } else {
+        toast.error(err?.response?.data?.detail || "Generation failed");
+      }
       setLeads((prev) =>
         prev.map((l) =>
           selectedLeadIds.has(l.company_id) && l.status === "drafting"
@@ -439,6 +495,8 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
       );
     } finally {
       setIsGenerating(false);
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      abortControllerRef.current = null;
     }
   }, [
     selectedTemplateId,
@@ -616,6 +674,7 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
+    <>
     <Box
       sx={{
         display: "flex",
@@ -639,6 +698,59 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
         >
           Step 3 of 3 &middot; Review &amp; Send
         </Typography>
+        {/* Generating status bar — shown above header row when active */}
+        {isGenerating && (() => {
+          const total = generateProgress.total || selectedLeadIds.size;
+          const secsPerLead = useAi ? 25 : 3;
+          const estTotal = total * secsPerLead;
+          const remaining = Math.max(0, estTotal - elapsedSeconds);
+          const fmt = (s: number) => s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`;
+          return (
+            <Box sx={{ display: "flex", alignItems: "center", gap: "8px", mb: "10px" }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  px: "12px",
+                  py: "6px",
+                  bgcolor: colors.brandSoft,
+                  border: `1px solid ${colors.brand}`,
+                  borderRadius: "8px",
+                  flexShrink: 0,
+                }}
+              >
+                <CircularProgress size={10} sx={{ color: colors.brand }} />
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: colors.brand, whiteSpace: "nowrap" }}>
+                  Generating {generateProgress.done}/{total}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: colors.brandInk, opacity: 0.75, whiteSpace: "nowrap" }}>
+                  &nbsp;·&nbsp;{fmt(elapsedSeconds)} elapsed · ~{fmt(remaining)} left
+                </Typography>
+              </Box>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleStopGeneration}
+                sx={{
+                  textTransform: "none",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "#ef4444",
+                  borderColor: "#ef4444",
+                  borderRadius: "8px",
+                  py: "5px",
+                  px: "10px",
+                  flexShrink: 0,
+                  "&:hover": { bgcolor: "#fff0f0", borderColor: "#dc2626" },
+                }}
+              >
+                ⏹ Stop
+              </Button>
+            </Box>
+          );
+        })()}
+
         <Box display="flex" alignItems="center" justifyContent="space-between">
           <Box>
             <Typography
@@ -661,28 +773,6 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
           </Box>
           {/* Top-right actions */}
           <Box display="flex" alignItems="center" gap="8px">
-            {isGenerating && (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  px: "12px",
-                  py: "6px",
-                  bgcolor: colors.brandSoft,
-                  border: `1px solid ${colors.brand}`,
-                  borderRadius: "8px",
-                }}
-              >
-                <CircularProgress size={10} sx={{ color: colors.brand }} />
-                <Typography
-                  sx={{ fontSize: 12, fontWeight: 600, color: colors.brand }}
-                >
-                  Generating &mdash; {generateProgress.done} of{" "}
-                  {generateProgress.total || selectedLeadIds.size}
-                </Typography>
-              </Box>
-            )}
             {!isGenerating && draftedCount > 0 && (
               <Typography sx={{ fontSize: 12, color: colors.ink3 }}>
                 {draftedCount} need{draftedCount !== 1 ? "" : "s"} review
@@ -691,13 +781,16 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
             <Button
               variant="outlined"
               size="small"
-              disabled
+              startIcon={<Bookmark sx={{ fontSize: "13px !important" }} />}
+              disabled={selectedLeadIds.size === 0 || !selectedTemplateId}
+              onClick={() => { setCampaignName(""); setSaveDialogOpen(true); }}
               sx={{
                 textTransform: "none",
                 fontSize: 12,
                 borderColor: colors.border,
-                color: colors.ink3,
+                color: colors.ink2,
                 borderRadius: "8px",
+                "&:hover": { borderColor: colors.borderStrong },
               }}
             >
               Save as campaign
@@ -1554,6 +1647,61 @@ const EmailBroadcast: React.FC<{ initialSelectedIds?: number[] }> = ({
         )}
       </Box>
     </Box>
+
+    {/* ── Save as Campaign dialog ──────────────────────────────────────────── */}
+    <Dialog
+      open={saveDialogOpen}
+      onClose={() => setSaveDialogOpen(false)}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: "14px" } }}
+    >
+      <DialogTitle sx={{ fontWeight: 700, fontSize: 15, pb: 1 }}>
+        Save as campaign
+      </DialogTitle>
+      <DialogContent sx={{ pt: "8px !important" }}>
+        <Typography fontSize={12} color={colors.ink3} mb="12px">
+          Saving <strong>{selectedLeadIds.size} lead{selectedLeadIds.size !== 1 ? "s" : ""}</strong> with the selected template. You can reopen this campaign anytime from the Campaigns page to send or follow up.
+        </Typography>
+        <TextField
+          autoFocus
+          fullWidth
+          size="small"
+          label="Campaign name"
+          placeholder="e.g. Furniture Lahore May 2025"
+          value={campaignName}
+          onChange={(e) => setCampaignName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && campaignName.trim()) handleSaveCampaign();
+          }}
+          sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px" } }}
+        />
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2, gap: "8px" }}>
+        <Button
+          onClick={() => setSaveDialogOpen(false)}
+          sx={{ textTransform: "none", fontSize: 12, color: colors.ink3 }}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="contained"
+          disabled={!campaignName.trim() || isSavingCampaign}
+          onClick={handleSaveCampaign}
+          sx={{
+            textTransform: "none",
+            fontSize: 12,
+            fontWeight: 600,
+            bgcolor: colors.brand,
+            "&:hover": { bgcolor: colors.brandInk },
+            borderRadius: "8px",
+          }}
+        >
+          {isSavingCampaign ? "Saving…" : "Save campaign"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 };
 

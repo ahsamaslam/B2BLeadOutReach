@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -117,19 +117,21 @@ class EmailTemplate(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), index=True)
-    
+    campaign_template_id = Column(Integer, ForeignKey("campaign_templates.id", ondelete="SET NULL"), nullable=True, index=True)
+
     subject = Column(String(500), nullable=False)
     body = Column(Text, nullable=False)
     status = Column(String(50), default="drafted", index=True)
     # Status values: drafted, approved, sent, rejected
-    
+
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
-    
+
     # Relationships
     company = relationship("Company", back_populates="email_templates")
+    campaign_template = relationship("CampaignTemplate", foreign_keys=[campaign_template_id])
     email_logs = relationship("EmailLog", back_populates="template", cascade="all, delete-orphan")
 
 
@@ -281,3 +283,17 @@ class User(Base):
 
     tenant = relationship("Tenant", back_populates="users")
     linkedin_token = relationship("LinkedInToken", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+class Campaign(Base):
+    """A saved broadcast setup: named group of leads + template for reuse and follow-ups."""
+    __tablename__ = "campaigns"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String(255), nullable=False, index=True)
+    template_id = Column(Integer, ForeignKey("campaign_templates.id", ondelete="SET NULL"), nullable=True)
+    company_ids = Column(JSON, default=list)
+    use_ai      = Column(Boolean, default=True)
+    created_at  = Column(DateTime, default=datetime.utcnow, index=True)
+
+    template = relationship("CampaignTemplate", foreign_keys=[template_id])

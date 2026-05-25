@@ -12,6 +12,7 @@ from app.api import settings as settings_api
 from app.api import admin as admin_api
 from app.api import followups as followups_api
 from app.api import scraping as scraping_api
+from app.api import campaigns as campaigns_api
 
 # Create all tables (new tables only — existing tables are not modified)
 Base.metadata.create_all(bind=engine)
@@ -200,6 +201,7 @@ app.include_router(settings_api.router, prefix="/api/settings", tags=["Settings"
 app.include_router(admin_api.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(followups_api.router, prefix="/api/followups", tags=["Followups"])
 app.include_router(scraping_api.router, prefix="/api/scraping", tags=["Scraping"])
+app.include_router(campaigns_api.router, prefix="/api/campaigns", tags=["Campaigns"])
 
 # ── Follow-up scheduler (APScheduler, runs inside FastAPI process) ────────────
 from apscheduler.schedulers.background import BackgroundScheduler

@@ -17,6 +17,8 @@ interface ShellProps extends SidebarProps {
   flush?: boolean;
   /** Badge count on the Tenants sidebar item. */
   adminTenantCount?: number;
+  /** Opens the global search palette. */
+  onOpenSearch?: () => void;
 }
 
 /**
@@ -46,6 +48,7 @@ export const Shell: React.FC<ShellProps> = ({
   children,
   flush,
   adminTenantCount,
+  onOpenSearch,
   ...sidebarProps
 }) => {
   const theme = useTheme();
@@ -63,7 +66,7 @@ export const Shell: React.FC<ShellProps> = ({
     >
       {/* Desktop: permanent sidebar */}
       {!isMobile && (
-        <Sidebar {...sidebarProps} adminTenantCount={adminTenantCount} />
+        <Sidebar {...sidebarProps} adminTenantCount={adminTenantCount} onOpenSearch={onOpenSearch} />
       )}
 
       {/* Mobile: temporary drawer */}
@@ -79,6 +82,7 @@ export const Shell: React.FC<ShellProps> = ({
           {...sidebarProps}
           adminTenantCount={adminTenantCount}
           onClose={() => setMobileOpen(false)}
+          onOpenSearch={onOpenSearch}
         />
       </Drawer>
 
@@ -96,6 +100,7 @@ export const Shell: React.FC<ShellProps> = ({
           actions={topBarActions}
           hideSearch={hideSearch}
           onMenuClick={isMobile ? () => setMobileOpen(true) : undefined}
+          onOpenSearch={onOpenSearch}
         />
         <Box
           sx={{ flex: 1, overflow: "auto", p: flush ? 0 : { xs: 2, sm: 3.5 } }}

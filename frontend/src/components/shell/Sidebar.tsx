@@ -14,6 +14,7 @@ import {
   AutoAwesomeOutlined,
   CloseOutlined,
   ExpandMore,
+  BookmarkBorderOutlined,
 } from "@mui/icons-material";
 import { colors } from "../../theme/tokens";
 
@@ -29,6 +30,7 @@ export type NavId =
   | "leads"
   | "templates"
   | "broadcast"
+  | "campaigns"
   | "history"
   | "settings"
   | "pricing"
@@ -44,6 +46,7 @@ export interface SidebarProps {
   onLogout: () => void;
   adminTenantCount?: number;
   onClose?: () => void;
+  onOpenSearch?: () => void;
 }
 
 const PIPELINE: {
@@ -56,6 +59,7 @@ const PIPELINE: {
   { id: "leads", label: "Leads", Icon: StorageOutlined },
   { id: "templates", label: "Templates", Icon: ArticleOutlined },
   { id: "broadcast", label: "Broadcast", Icon: SendOutlined },
+  { id: "campaigns", label: "Campaigns", Icon: BookmarkBorderOutlined },
   { id: "history", label: "Sent history", Icon: HistoryOutlined },
 ];
 
@@ -134,6 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   adminTenantCount,
   onClose,
+  onOpenSearch,
 }) => {
   return (
     <Box
@@ -226,6 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Quick find */}
       <Box sx={{ px: 1.5, pb: 0.5 }}>
         <Box
+          onClick={onOpenSearch}
           sx={{
             height: 32,
             display: "flex",

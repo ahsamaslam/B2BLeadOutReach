@@ -777,12 +777,21 @@ def _primary_contact(company: Company):
 
 
 def _substitute_placeholders(text: str, company: Company, owner_name: str) -> str:
+    first_name = (owner_name or "").split()[0] if owner_name else ""
     return (
         text
+        # company name variants
         .replace("{{company_name}}", company.name or "")
+        .replace("{{company}}", company.name or "")
+        .replace("{{PROSPECT_COMPANY}}", company.name or "")
+        # owner/contact name variants
         .replace("{{owner_name}}", owner_name or "")
+        .replace("{{owner}}", owner_name or "")
+        .replace("{{PROSPECT_FIRST_NAME}}", first_name)
+        # other lead fields
         .replace("{{address}}", company.address or "")
         .replace("{{niche}}", company.niche or "")
+        .replace("{{PROSPECT_INDUSTRY}}", company.niche or "")
         .replace("{{location}}", company.location or "")
         .replace("{{website}}", company.website or "")
     )
@@ -828,48 +837,136 @@ async def broadcast_generate(
         # Attempt AI generation
         if ai_client:
             try:
-                sender_block = f" Sign off with: {sender_name}." if sender_name else ""
-                instr_block = (
-                    f"\n\nInstructions: {tmpl.instructions.strip()}"
-                    if tmpl.instructions
-                    else ""
-                )
+                import re as _re
+                import logging as _logging
+                _log = _logging.getLogger(__name__)
+
                 domain = (company.website or "").replace("https://", "").replace("http://", "").split("/")[0]
-                msg = ai_client.messages.create(
+                first_name = owner_name.split()[0] if owner_name else ""
+                niche = company.niche or "general business"
+                location = company.location or "unknown"
+
+                # Find every {{PLACEHOLDER}} in subject + body (all-caps style = AI must fill)
+                all_text = tmpl.subject_template + "\n" + tmpl.body_template
+                ai_placeholders = list(dict.fromkeys(
+                    _re.findall(r"\{\{([A-Z][A-Z0-9_]*)\}\}", all_text)
+                ))
+                _log.warning("DEBUG ai_placeholders found: %s", ai_placeholders)
+
+                if ai_placeholders:
+                    # STEP 1: Ask Claude for a values dictionary only
+                    placeholder_json_keys = json.dumps(ai_placeholders, indent=2)
+                    instr_block = (
+                        f"\n\nExtra campaign instructions: {tmpl.instructions.strip()}"
+                        if tmpl.instructions else ""
+                    )
+                    step1 = ai_client.messages.create(
+                        model=settings.ANTHROPIC_MODEL,
+                        max_tokens=2500,
+                        system=(
+                            "You are an expert B2B cold email copywriter. "
+                            "You will receive a list of placeholder names and lead data. "
+                            "Your job: return a JSON object where each key is a placeholder name and the value is the text to replace it with. "
+                            "Rules:\n"
+                            "- Every key in the input list MUST appear in your output.\n"
+                            "- Values must be specific to the lead's industry/niche — never generic.\n"
+                            "- You have full creative freedom to invent realistic, specific content.\n"
+                            "- Values should be short phrases or sentences, not placeholders or template text.\n"
+                            "- Do NOT include {{...}} brackets in your values — write the actual content.\n"
+                            "- Return ONLY valid JSON, no markdown, no explanation.\n"
+                            "Niche-specific guidance:\n"
+                            "  SPECIFIC_PAGE_OR_SERVICE → a real page/service that niche typically has (e.g. 'Property Listings page', 'Booking & Scheduling section')\n"
+                            "  CURRENT_BUSINESS_ACTIVITY → what they're likely doing right now in their niche\n"
+                            "  SPECIFIC_COMPLIMENT_ABOUT_THEIR_BUSINESS → genuine compliment based on their niche and location\n"
+                            "  INDUSTRY_PAIN_POINT → real problem businesses in this niche face daily\n"
+                            "  COST_ESTIMATE → realistic dollar/time cost (e.g. '$40,000' or '200 hours')\n"
+                            "  RESOURCE_TYPE → time, money, staff, leads, etc.\n"
+                            "  AUTOMATION_OPPORTUNITY_1/2/3 → specific task in their niche that can be automated\n"
+                            "  CURRENT_MANUAL_PROCESS → what they're doing manually now\n"
+                            "  BENEFIT_1/2/3 → concrete benefit from automating (e.g. 'respond to inquiries 10x faster')\n"
+                            "  SPECIFIC_OBSERVATION → something observable about a business in their niche\n"
+                            "  SPECIFIC_INSIGHT → insight about their niche operations\n"
+                            "  INDUSTRY_TREND_OR_URGENCY → current trend driving urgency in their niche\n"
+                            "  INDUSTRY_BENCHMARK_RESULT → stat like '30% more leads' or '2x response rates'\n"
+                            "  MY_COMPANY_SPECIALIZATION → describe specialization relevant to their niche\n"
+                            "  UNIQUE_VALUE_PROPOSITION → value prop tailored to their niche problems\n"
+                            "  SPECIFIC_RESULT → result we've helped similar companies achieve\n"
+                            "  PROBLEM_1/2/3 → real problems in their niche\n"
+                            "  SOLUTION_1/2/3 → solutions matching those problems\n"
+                            "  MOST_RELEVANT_OPPORTUNITY → single most impactful automation for their niche\n"
+                            "  SPECIFIC_TECHNOLOGY → relevant AI/automation technology for their niche\n"
+                            "  SPECIFIC_METRIC → key metric that matters in their niche\n"
+                            "  SPECIFIC_PROCESS → a process in their niche ripe for automation\n"
+                            "  ESTIMATED_SAVINGS → realistic savings claim (e.g. '15 hours/week' or '$2,000/month')\n"
+                            "  SPECIFIC_PERSONALIZED_PS_ABOUT_THEIR_BUSINESS_OR_RECENT_NEWS → short PS line relevant to their niche\n"
+                            + instr_block
+                        ),
+                        messages=[{
+                            "role": "user",
+                            "content": (
+                                f"Lead info:\n"
+                                f"  First name: {first_name or 'there'}\n"
+                                f"  Full name: {owner_name or 'the owner'}\n"
+                                f"  Company: {company.name or 'their company'}\n"
+                                f"  Domain: {domain or 'unknown'}\n"
+                                f"  Industry/Niche: {niche}\n"
+                                f"  Location: {location}\n"
+                                f"  Role: {recipient_role or 'owner'}\n"
+                                f"  Company info: {(company.company_info or '')[:600]}\n\n"
+                                f"Placeholder names to fill (return as JSON object):\n{placeholder_json_keys}\n\n"
+                                f"Return ONLY a JSON object mapping each placeholder name to its value. "
+                                f"Make every value specific to a {niche} business in {location}."
+                            ),
+                        }],
+                    )
+                    raw1 = step1.content[0].text.strip()
+                    _log.warning("DEBUG step1 raw response: %s", raw1[:500])
+                    if raw1.startswith("```"):
+                        raw1 = raw1.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    values_map = json.loads(raw1)
+                    _log.warning("DEBUG values_map keys: %s", list(values_map.keys()))
+
+                    # STEP 2: substitute all AI-filled values into subject and body
+                    for key, val in values_map.items():
+                        if isinstance(val, str):
+                            subject = subject.replace(f"{{{{{key}}}}}", val)
+                            body = body.replace(f"{{{{{key}}}}}", val)
+                    _log.warning("DEBUG after substitution subject: %s", subject[:200])
+
+                # STEP 3: Ask Claude to polish the final email into clean HTML
+                polish = ai_client.messages.create(
                     model=settings.ANTHROPIC_MODEL,
-                    max_tokens=1024,
+                    max_tokens=2500,
                     system=(
-                        "You are an expert B2B outreach copywriter. "
-                        "Write a single personalised cold email. "
-                        "Return JSON with 'subject' and 'body' keys only. "
-                        "Body must be valid HTML using <p> tags for paragraphs."
-                        + sender_block
-                        + instr_block
+                        "You are a B2B email editor. You receive a nearly-complete cold email. "
+                        "Your job:\n"
+                        "1. If any {{PLACEHOLDER}} still remains, replace it with a realistic value based on context.\n"
+                        "2. Make the email flow naturally — fix any awkward phrasing from substitution.\n"
+                        "3. Return ONLY valid JSON with 'subject' and 'body' keys.\n"
+                        "4. Body must be valid HTML using <p> and <br> tags.\n"
+                        "5. Do NOT add new sections or change the structure significantly.\n"
+                        "6. Human, warm, consultative tone."
+                        + (f" Sign off as: {sender_name}." if sender_name else "")
                     ),
                     messages=[{
                         "role": "user",
                         "content": (
-                            f"Template subject: {tmpl.subject_template}\n"
-                            f"Template body:\n{tmpl.body_template}\n\n"
-                            f"Lead:\n"
-                            f"- Company: {company.name}\n"
-                            f"- Domain: {domain}\n"
-                            f"- Niche: {company.niche or ''}\n"
-                            f"- Location: {company.location or ''}\n"
-                            f"- Decision maker: {owner_name} ({recipient_role})\n"
-                            f"- Recipient email: {recipient_email}\n"
-                            f"- Company info: {(company.company_info or '')[:400]}"
+                            f"Subject: {subject}\n\n"
+                            f"Body:\n{body}\n\n"
+                            f"Return as JSON with 'subject' and 'body' keys."
                         ),
                     }],
                 )
-                raw = msg.content[0].text.strip()
-                if raw.startswith("```"):
-                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                data = json.loads(raw)
+                raw2 = polish.content[0].text.strip()
+                if raw2.startswith("```"):
+                    raw2 = raw2.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                data = json.loads(raw2)
                 subject = data.get("subject", subject)
                 body = data.get("body", body)
-            except Exception:
-                pass  # fall back to substituted version
+
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("AI generation failed: %s", e, exc_info=True)
 
         # Upsert EmailTemplate record (skip if already sent)
         existing = (
@@ -884,9 +981,10 @@ async def broadcast_generate(
             existing.body = body
             existing.status = "drafted"
             existing.updated_at = datetime.utcnow()
+            existing.campaign_template_id = tmpl.id
             et = existing
         else:
-            et = EmailTemplate(company_id=company.id, subject=subject, body=body, status="drafted")
+            et = EmailTemplate(company_id=company.id, campaign_template_id=tmpl.id, subject=subject, body=body, status="drafted")
             db.add(et)
         db.flush()
 
@@ -1037,6 +1135,7 @@ def broadcast_send_approved(
                 company.status = "sent"
             log = EmailLog(
                 template_id=et.id,
+                campaign_template_id=et.campaign_template_id,
                 company_id=et.company_id,
                 tenant_id=current_user.tenant_id,
                 recipient_email=recipient_email,

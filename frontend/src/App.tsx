@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Component } from "react";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@mui/icons-material";
 
 import { Shell, NavId } from "./components/shell";
+import { SearchPalette } from "./components/shell/SearchPalette";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 import LeadsList from "./components/LeadsList";
@@ -33,8 +34,31 @@ import History from "./components/History";
 import Settings from "./components/Settings";
 import Pricing from "./components/Pricing";
 import AdminTenants from "./components/AdminTenants";
+import Campaigns from "./components/Campaigns";
 import { api, authStorage } from "./services/api";
 import { colors } from "./theme/tokens";
+
+// ── Error boundary — catches JS errors so tabs never go completely blank ───────
+class TabErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Tab render error:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <Box sx={{ p: 4, maxWidth: 520 }}>
+          <Typography fontWeight={700} fontSize={15} color="#c4423b" mb={1}>Something went wrong loading this page</Typography>
+          <Box component="pre" sx={{ fontSize: 12, bgcolor: "#fbe9e7", p: 2, borderRadius: 2, overflowX: "auto", color: "#c4423b", whiteSpace: "pre-wrap" }}>
+            {String(this.state.error)}
+          </Box>
+          <Button variant="outlined" size="small" sx={{ mt: 2, textTransform: "none" }}
+            onClick={() => this.setState({ error: null })}>Try again</Button>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Force-change-password dialog shown on first login ─────────────────────────
 
@@ -229,6 +253,7 @@ const CRUMB: Record<NavId, string> = {
   leads: "Leads",
   templates: "Templates",
   broadcast: "Broadcast",
+  campaigns: "Campaigns",
   history: "Sent history",
   settings: "Settings",
   pricing: "Plan & billing",
@@ -241,11 +266,27 @@ const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState({ name: "User", email: "", initials: "U" });
   const [campaignLeadIds, setCampaignLeadIds] = useState<number[]>([]);
+  const [campaignTemplateId, setCampaignTemplateId] = useState<number | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("Workspace");
   const [usage, setUsage] = useState<
     { sent: number; cap: number | null; planLabel: string } | undefined
   >(undefined);
+
+  // Search palette
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Ctrl+K / ⌘K global shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        if (isAuthenticated && !mustChangePassword) setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isAuthenticated, mustChangePassword]);
 
   // Admin state
   const [adminInviteOpen, setAdminInviteOpen] = useState(false);
@@ -306,8 +347,9 @@ const App: React.FC = () => {
     setIsAdmin(false);
   };
 
-  const handleSendToSelected = (ids: number[]) => {
+  const handleSendToSelected = (ids: number[], templateId?: number | null) => {
     setCampaignLeadIds(ids);
+    setCampaignTemplateId(templateId ?? null);
     setActiveTab("broadcast");
   };
 
@@ -401,6 +443,12 @@ const App: React.FC = () => {
           }}
         />
       ) : (
+        <>
+        <SearchPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onNavigate={(id) => { setActiveTab(id); setPaletteOpen(false); }}
+        />
         <Shell
           active={activeTab}
           onNavigate={setActiveTab}
@@ -412,6 +460,7 @@ const App: React.FC = () => {
           crumb={CRUMB[activeTab]}
           topBarActions={adminTopBarActions}
           adminTenantCount={adminTenantCount}
+          onOpenSearch={() => setPaletteOpen(true)}
           flush={
             activeTab === "templates" ||
             activeTab === "broadcast" ||
@@ -419,29 +468,60 @@ const App: React.FC = () => {
           }
         >
           {activeTab === "dashboard" && (
-            <Dashboard onShowHistory={() => setActiveTab("history")} />
+            <TabErrorBoundary key="dashboard">
+              <Dashboard onShowHistory={() => setActiveTab("history")} />
+            </TabErrorBoundary>
           )}
           {activeTab === "leads" && (
-            <LeadsList onSendToSelected={handleSendToSelected} />
+            <TabErrorBoundary key="leads">
+              <LeadsList onSendToSelected={handleSendToSelected} />
+            </TabErrorBoundary>
           )}
-          {activeTab === "templates" && <CampaignTemplates />}
+          {activeTab === "templates" && (
+            <TabErrorBoundary key="templates">
+              <CampaignTemplates />
+            </TabErrorBoundary>
+          )}
           {activeTab === "broadcast" && (
-            <EmailBroadcast
-              key={campaignLeadIds.join(",")}
-              initialSelectedIds={campaignLeadIds}
-            />
+            <TabErrorBoundary key="broadcast">
+              <EmailBroadcast
+                key={campaignLeadIds.join(",") + String(campaignTemplateId)}
+                initialSelectedIds={campaignLeadIds}
+                initialTemplateId={campaignTemplateId}
+              />
+            </TabErrorBoundary>
           )}
-          {activeTab === "history" && <History />}
-          {activeTab === "settings" && <Settings />}
-          {activeTab === "pricing" && <Pricing />}
+          {activeTab === "campaigns" && (
+            <TabErrorBoundary key="campaigns">
+              <Campaigns onOpenInBroadcast={handleSendToSelected} />
+            </TabErrorBoundary>
+          )}
+          {activeTab === "history" && (
+            <TabErrorBoundary key="history">
+              <History />
+            </TabErrorBoundary>
+          )}
+          {activeTab === "settings" && (
+            <TabErrorBoundary key="settings">
+              <Settings />
+            </TabErrorBoundary>
+          )}
+          {activeTab === "pricing" && (
+            <TabErrorBoundary key="pricing">
+              <Pricing />
+            </TabErrorBoundary>
+          )}
           {activeTab === "admin" && isAdmin && (
-            <AdminTenants
-              inviteOpen={adminInviteOpen}
-              onInviteClose={() => setAdminInviteOpen(false)}
-              syncKey={adminSyncKey}
-            />
+            <TabErrorBoundary key="admin">
+              <AdminTenants
+                inviteOpen={adminInviteOpen}
+                onInviteClose={() => setAdminInviteOpen(false)}
+                syncKey={adminSyncKey}
+              />
+            </TabErrorBoundary>
           )}
         </Shell>
+        </>
       )}
     </>
   );

@@ -55,7 +55,7 @@ def list_portfolio(current_user: User = Depends(get_current_user)):
 
 @router.post("/upload")
 async def upload_portfolio(
-    files: Annotated[list[UploadFile], File(description="One or more portfolio files")],
+    files: list[UploadFile] = File(description="One or more portfolio files"),
     current_user: User = Depends(get_current_user),
 ):
     """Upload one or more portfolio files (max 10 MB each)."""

@@ -1,5 +1,35 @@
 import axios from "axios";
 
+export interface CampaignSummary {
+  id: number;
+  name: string;
+  template_id: number | null;
+  template_name: string | null;
+  lead_count: number;
+  use_ai: boolean;
+  created_at: string;
+}
+
+export interface CampaignLeadDetail {
+  company_id: number;
+  company_name: string;
+  niche: string | null;
+  location: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_role: string | null;
+}
+
+export interface CampaignDetail {
+  id: number;
+  name: string;
+  template_id: number | null;
+  template_name: string | null;
+  use_ai: boolean;
+  created_at: string;
+  leads: CampaignLeadDetail[];
+}
+
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "auth_token";
 
@@ -24,13 +54,25 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on 401 (expired / invalid token)
+// Normalize API responses that should be arrays — handles both plain arrays and {items:[]} wrappers
+function toArray<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && Array.isArray((data as any).items)) return (data as any).items as T[];
+  return [];
+}
+
+// Auto-logout on 401; show error on 403 (suspended account/workspace)
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
       authStorage.clearToken();
       window.location.reload();
+    }
+    if (error?.response?.status === 403) {
+      const detail = error?.response?.data?.detail ?? "Access denied";
+      // Dynamically import toast to avoid circular deps
+      import("react-hot-toast").then(({ default: toast }) => toast.error(detail));
     }
     return Promise.reject(error);
   },
@@ -110,7 +152,7 @@ export const api = {
     if (filters?.limit) params.limit = filters.limit;
     if (filters?.offset) params.offset = filters.offset;
     const response = await axiosInstance.get("/api/companies", { params });
-    return response.data;
+    return toArray(response.data) as any[];
   },
 
   getCompanyStats: async () => {
@@ -357,9 +399,9 @@ export const api = {
   },
 
   // Campaign templates
-  getCampaignTemplates: async () => {
+  getCampaignTemplates: async (): Promise<any[]> => {
     const response = await axiosInstance.get("/api/emails/campaign-templates");
-    return response.data;
+    return toArray(response.data);
   },
 
   createCampaignTemplate: async (payload: {
@@ -790,10 +832,11 @@ export const api = {
     campaign_template_id: number;
     attach_portfolio?: boolean;
     use_ai?: boolean;
-  }) => {
+  }, signal?: AbortSignal) => {
     const response = await axiosInstance.post(
       "/api/emails/broadcast/generate",
       payload,
+      { signal },
     );
     return response.data as {
       generated: number;
@@ -874,11 +917,7 @@ export const api = {
     const response = await axiosInstance.get("/api/emails/history/chart", {
       params: { days },
     });
-    return response.data as Array<{
-      date: string;
-      sent: number;
-      opened: number;
-    }>;
+    return toArray<{ date: string; sent: number; opened: number }>(response.data);
   },
 
   getHistory: async (params: {
@@ -921,6 +960,32 @@ export const api = {
 
   getHistoryNiches: async () => {
     const response = await axiosInstance.get("/api/emails/history/niches");
-    return response.data as string[];
+    return toArray<string>(response.data);
+  },
+
+  // ── Campaigns ────────────────────────────────────────────────────────────────
+
+  createCampaign: async (data: {
+    name: string;
+    template_id?: number | null;
+    company_ids: number[];
+    use_ai: boolean;
+  }) => {
+    const response = await axiosInstance.post("/api/campaigns", data);
+    return response.data as CampaignSummary;
+  },
+
+  listCampaigns: async () => {
+    const response = await axiosInstance.get("/api/campaigns");
+    return toArray<CampaignSummary>(response.data);
+  },
+
+  getCampaign: async (id: number) => {
+    const response = await axiosInstance.get(`/api/campaigns/${id}`);
+    return response.data as CampaignDetail;
+  },
+
+  deleteCampaign: async (id: number) => {
+    await axiosInstance.delete(`/api/campaigns/${id}`);
   },
 };

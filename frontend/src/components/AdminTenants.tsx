@@ -612,11 +612,17 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
 
   // Filters
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
   const [createdRange, setCreatedRange] = useState("30d");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   // Context menu / popovers
   const [planAnchor, setPlanAnchor] = useState<{
@@ -632,10 +638,10 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
   } | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  // Reset page when filters change
+  // Reset page when non-search filters change
   useEffect(() => {
     setPage(1);
-  }, [search, planFilter, statusFilter, createdRange]);
+  }, [planFilter, statusFilter, createdRange]);
 
   // Refetch when syncKey bumps
   useEffect(() => {
@@ -647,14 +653,14 @@ const AdminTenants: React.FC<AdminTenantsProps> = ({
 
   const params = useMemo(
     () => ({
-      ...(search ? { q: search } : {}),
+      ...(debouncedSearch ? { q: debouncedSearch } : {}),
       ...(planFilter !== "all" ? { plan: planFilter } : {}),
       ...(statusFilter !== "all" ? { status: statusFilter } : {}),
       ...(createdRange !== "all" ? { created_range: createdRange } : {}),
       page,
       page_size: PAGE_SIZE,
     }),
-    [search, planFilter, statusFilter, createdRange, page],
+    [debouncedSearch, planFilter, statusFilter, createdRange, page],
   );
 
   const { data, isLoading } = useQuery({

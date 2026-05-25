@@ -12,6 +12,7 @@ interface TopBarProps {
   actions?: React.ReactNode;
   hideSearch?: boolean;
   onMenuClick?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -19,6 +20,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   actions,
   hideSearch,
   onMenuClick,
+  onOpenSearch,
 }) => (
   <Box
     sx={{
@@ -58,6 +60,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
     {!hideSearch && (
       <Box
+        onClick={onOpenSearch}
         sx={{
           display: { xs: "none", md: "flex" },
           alignItems: "center",
@@ -71,6 +74,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           color: colors.ink3,
           fontSize: 12.5,
           cursor: "pointer",
+          "&:hover": { borderColor: colors.borderStrong },
         }}
       >
         <SearchOutlined sx={{ fontSize: 13 }} />

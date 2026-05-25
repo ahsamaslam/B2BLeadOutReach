@@ -25,7 +25,8 @@
     "recharts": "^2.12.0",
     "typescript": "^4.9.5",
     "web-vitals": "^2.1.4",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "mammoth": "^1.7.2"
   },
   "scripts": {
     "start": "react-scripts start",
