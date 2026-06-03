@@ -298,8 +298,8 @@ const App: React.FC = () => {
   const fetchUsage = async () => {
     try {
       const u = await api.getUsage();
-      setWorkspaceName(u.tenant_name);
-      setUsage({ sent: u.sent, cap: u.cap, planLabel: u.plan_label });
+      setWorkspaceName(u.tenant_name ?? "Workspace");
+      setUsage({ sent: u.sent ?? 0, cap: u.cap ?? null, planLabel: u.plan_label ?? "Free plan" });
     } catch {}
   };
 
@@ -424,13 +424,11 @@ const App: React.FC = () => {
               const u = await api.me();
               setIsAdmin(u.is_admin ?? false);
               setMustChangePassword(u.must_change_password ?? false);
-              if (u.email) {
-                setUser({
-                  name: u.email,
-                  email: u.email,
-                  initials: initials(u.email),
-                });
-              }
+              setUser({
+                name: u.email || "User",
+                email: u.email || "",
+                initials: u.email ? initials(u.email) : "U",
+              });
               if (u.is_admin) {
                 try {
                   const stats = await api.adminGetStats();
@@ -438,8 +436,14 @@ const App: React.FC = () => {
                 } catch {}
               }
               await fetchUsage();
-            } catch {}
-            setIsAuthenticated(true);
+              setIsAuthenticated(true);
+            } catch (err) {
+              // me() failed — clear token so login page shows clean
+              authStorage.clearToken();
+              import("react-hot-toast").then(({ default: toast }) =>
+                toast.error("Login failed. Please try again.")
+              );
+            }
           }}
         />
       ) : (

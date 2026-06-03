@@ -1,12 +1,12 @@
 """
 Portfolio file management API.
 Supports upload (PDF, DOCX, PPTX, PNG, JPG), list, download, delete.
-Files are stored in /app/uploads/portfolio/ with a user{id}_ prefix.
+Files are stored per-workspace: tenant{tenant_id}_ prefix for tenant users,
+user{id}_ prefix for super-admins (no tenant). This means all users in the
+same workspace share the same portfolio files.
 """
-import os
 import uuid
 from pathlib import Path
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -30,7 +30,10 @@ def _ensure_upload_dir():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _user_prefix(user: User) -> str:
+def _workspace_prefix(user: User) -> str:
+    """Return a prefix shared by all users in the same workspace."""
+    if user.tenant_id:
+        return f"tenant{user.tenant_id}_"
     return f"user{user.id}_"
 
 
@@ -38,7 +41,7 @@ def _user_prefix(user: User) -> str:
 def list_portfolio(current_user: User = Depends(get_current_user)):
     """List all portfolio files belonging to the current user."""
     _ensure_upload_dir()
-    prefix = _user_prefix(current_user)
+    prefix = _workspace_prefix(current_user)
     files = []
     for f in UPLOAD_DIR.iterdir():
         if f.is_file() and f.name.startswith(prefix):
@@ -60,7 +63,7 @@ async def upload_portfolio(
 ):
     """Upload one or more portfolio files (max 10 MB each)."""
     _ensure_upload_dir()
-    prefix = _user_prefix(current_user)
+    prefix = _workspace_prefix(current_user)
     saved = []
 
     for upload in files:
@@ -97,7 +100,7 @@ def download_portfolio(
     current_user: User = Depends(get_current_user),
 ):
     """Download a portfolio file (must belong to the current user)."""
-    prefix = _user_prefix(current_user)
+    prefix = _workspace_prefix(current_user)
     if not stored_name.startswith(prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -115,7 +118,7 @@ def delete_portfolio(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a portfolio file (must belong to the current user)."""
-    prefix = _user_prefix(current_user)
+    prefix = _workspace_prefix(current_user)
     if not stored_name.startswith(prefix):
         raise HTTPException(status_code=403, detail="Access denied")
 

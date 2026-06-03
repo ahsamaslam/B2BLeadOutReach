@@ -377,8 +377,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             sx={{ fontSize: 11.5, color: colors.brandInk, opacity: 0.8, mb: 1 }}
           >
             {usage.cap === null
-              ? `${usage.sent} emails sent this month · Unlimited`
-              : `${usage.sent} of ${usage.cap} emails sent this month`}
+              ? `${usage.sent ?? 0} emails sent this month · Unlimited`
+              : `${usage.sent ?? 0} of ${usage.cap} emails sent this month`}
           </Typography>
           {usage.cap !== null && (
             <Box
@@ -392,7 +392,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Box
                 sx={{
                   height: "100%",
-                  width: `${Math.min(100, (usage.sent / usage.cap) * 100)}%`,
+                  width: `${Math.min(100, ((usage.sent ?? 0) / (usage.cap ?? 1)) * 100)}%`,
                   bgcolor: colors.brand,
                 }}
               />

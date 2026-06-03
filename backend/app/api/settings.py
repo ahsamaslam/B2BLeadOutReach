@@ -304,9 +304,17 @@ def get_team_members(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list:
-    """List all users in the current user's tenant."""
+    """List all users in the current user's tenant. For super-admins (no tenant) return themselves."""
     if not current_user.tenant_id:
-        return []
+        # Super-admin: return just themselves so the UI isn't empty
+        return [{
+            "id": current_user.id,
+            "email": current_user.email,
+            "display_name": current_user.display_name or "",
+            "role": "owner",
+            "is_admin": True,
+            "created_at": current_user.created_at.strftime("%b %d, %Y") if current_user.created_at else "",
+        }]
     users = db.query(User).filter(User.tenant_id == current_user.tenant_id).all()
     return [
         {

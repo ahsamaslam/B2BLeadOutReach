@@ -26,6 +26,8 @@ class CompanyUpdate(BaseModel):
     niche: Optional[str] = None
     location: Optional[str] = None
     business_type: Optional[str] = None
+    ceo_name: Optional[str] = None
+    ceo_email: Optional[str] = None
 
 class ContactResponse(BaseModel):
     id: int

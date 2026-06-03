@@ -51,6 +51,10 @@ axiosInstance.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // For FormData, remove Content-Type so the browser sets it with the correct multipart boundary
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
   return config;
 });
 
@@ -66,12 +70,14 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
+      // Only reload if we had a token (i.e. session expired mid-session).
+      // During a fresh login flow there is no old token to clear.
+      const hadToken = !!authStorage.getToken();
       authStorage.clearToken();
-      window.location.reload();
+      if (hadToken) window.location.href = "/";
     }
     if (error?.response?.status === 403) {
       const detail = error?.response?.data?.detail ?? "Access denied";
-      // Dynamically import toast to avoid circular deps
       import("react-hot-toast").then(({ default: toast }) => toast.error(detail));
     }
     return Promise.reject(error);
@@ -174,15 +180,7 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await axiosInstance.post(
-      "/api/companies/upload",
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      },
-    );
+    const response = await axiosInstance.post("/api/companies/upload", formData);
     return response.data;
   },
 
@@ -348,19 +346,13 @@ export const api = {
   },
 
   // Portfolio
-  listPortfolio: async () => {
+  listPortfolio: async (): Promise<any[]> => {
     const response = await axiosInstance.get("/api/portfolio/");
-    return response.data;
+    return toArray(response.data);
   },
 
   uploadPortfolio: async (formData: FormData) => {
-    const response = await axiosInstance.post(
-      "/api/portfolio/upload",
-      formData,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-      },
-    );
+    const response = await axiosInstance.post("/api/portfolio/upload", formData);
     return response.data;
   },
 
@@ -670,7 +662,7 @@ export const api = {
   // Team management (settings)
   getTeamMembers: async () => {
     const response = await axiosInstance.get("/api/settings/team");
-    return response.data as Array<{
+    return toArray(response.data) as Array<{
       id: number;
       email: string;
       display_name: string;

@@ -540,10 +540,30 @@ def update_company(
         raise HTTPException(status_code=404, detail="Company not found")
 
     updates = payload.model_dump(exclude_unset=True)
+    ceo_name = updates.pop("ceo_name", None)
+    ceo_email = updates.pop("ceo_email", None)
+
     for key, value in updates.items():
         if key == "website" and value is not None:
             value = str(value)
         setattr(company, key, value)
+
+    # Update or create primary contact
+    if ceo_name is not None or ceo_email is not None:
+        contact = db.query(Contact).filter(Contact.company_id == company_id).first()
+        if contact:
+            if ceo_name is not None:
+                contact.name = ceo_name or None
+            if ceo_email is not None:
+                contact.email = ceo_email or None
+        else:
+            contact = Contact(
+                company_id=company_id,
+                role="CEO",
+                name=ceo_name or None,
+                email=ceo_email or None,
+            )
+            db.add(contact)
 
     db.commit()
     db.refresh(company)

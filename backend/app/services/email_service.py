@@ -20,17 +20,25 @@ logger = logging.getLogger(__name__)
 UPLOAD_DIR = Path("/app/uploads/portfolio")
 
 
-def _get_portfolio_files(user_id: Optional[int] = None) -> list[Path]:
-    """Return all portfolio files, optionally filtered by user_id prefix."""
+def _get_portfolio_files(user_id: Optional[int] = None, tenant_id: Optional[int] = None) -> list[Path]:
+    """Return portfolio files for the workspace.
+    Uses tenant{id}_ prefix when tenant_id is set, falls back to user{id}_ for super-admins."""
     if not UPLOAD_DIR.exists():
         logger.warning("Portfolio upload directory does not exist: %s", UPLOAD_DIR)
         return []
+    # Determine the correct prefix (matches portfolio.py _workspace_prefix logic)
+    if tenant_id:
+        prefix = f"tenant{tenant_id}_"
+    elif user_id:
+        prefix = f"user{user_id}_"
+    else:
+        prefix = None
     files = []
     for f in UPLOAD_DIR.iterdir():
         if f.is_file():
-            if user_id is None or f.name.startswith(f"user{user_id}_"):
+            if prefix is None or f.name.startswith(prefix):
                 files.append(f)
-    logger.info("Found %d portfolio file(s) for user_id=%s: %s", len(files), user_id, [f.name for f in files])
+    logger.info("Found %d portfolio file(s) for tenant_id=%s user_id=%s: %s", len(files), tenant_id, user_id, [f.name for f in files])
     return files
 
 
@@ -101,6 +109,7 @@ def send_email(
     body_html: str,
     attach_portfolio: bool = False,
     user_id: Optional[int] = None,
+    tenant_id: Optional[int] = None,
     tracking_token: Optional[str] = None,
     tracking_base_url: Optional[str] = None,
     deliverability_mode: bool = False,
@@ -192,14 +201,16 @@ def send_email(
 
     # Portfolio attachments
     if attach_portfolio:
-        for file_path in _get_portfolio_files(user_id):
+        for file_path in _get_portfolio_files(user_id=user_id, tenant_id=tenant_id):
             try:
                 with open(file_path, "rb") as fh:
                     part = MIMEBase("application", "octet-stream")
                     part.set_payload(fh.read())
                 encoders.encode_base64(part)
                 display_name = file_path.name
-                if user_id and display_name.startswith(f"user{user_id}_"):
+                if tenant_id and display_name.startswith(f"tenant{tenant_id}_"):
+                    display_name = display_name[len(f"tenant{tenant_id}_"):]
+                elif user_id and display_name.startswith(f"user{user_id}_"):
                     display_name = display_name[len(f"user{user_id}_"):]
                 # Properly encode filename for email clients
                 part.add_header(
@@ -222,6 +233,69 @@ def send_email(
         except Exception as exc:
             logger.warning("Failed to write email dump: %s", exc)
 
+    # Use SendGrid if API key is configured, else fall back to SMTP
+    if settings.SENDGRID_API_KEY:
+        try:
+            import sendgrid as sg_module
+            from sendgrid.helpers.mail import (
+                Mail, Attachment, FileContent, FileName,
+                FileType, Disposition, ContentId
+            )
+            import base64
+
+            sg = sg_module.SendGridAPIClient(api_key=settings.SENDGRID_API_KEY)
+            mail = Mail()
+            mail.from_email = f"{from_name} <{from_email}>" if from_name else from_email
+            mail.to = f"{to_name} <{to_email}>" if to_name else to_email
+            mail.subject = subject
+
+            plain_text = _html_to_plaintext(body_html)
+
+            if deliverability_mode:
+                # Plain text only — lands in Primary inbox, not Promotions
+                plain_text = plain_text + "\n\n--\nIf you do not want to receive more emails, reply with 'Unsubscribe'."
+                mail.add_content(sg_module.helpers.mail.Content("text/plain", plain_text))
+            else:
+                enhanced_html = _ensure_html(body_html)
+                if tracking_token:
+                    effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
+                    enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
+                mail.add_content(sg_module.helpers.mail.Content("text/plain", plain_text))
+                mail.add_content(sg_module.helpers.mail.Content("text/html", enhanced_html))
+
+            # Portfolio attachments
+            if attach_portfolio:
+                for file_path in _get_portfolio_files(user_id=user_id, tenant_id=tenant_id):
+                    try:
+                        with open(file_path, "rb") as fh:
+                            data = fh.read()
+                        display_name = file_path.name
+                        if tenant_id and display_name.startswith(f"tenant{tenant_id}_"):
+                            display_name = display_name[len(f"tenant{tenant_id}_"):]
+                        elif user_id and display_name.startswith(f"user{user_id}_"):
+                            display_name = display_name[len(f"user{user_id}_"):]
+                        attachment = Attachment()
+                        attachment.file_content = FileContent(base64.b64encode(data).decode())
+                        attachment.file_name = FileName(display_name)
+                        attachment.file_type = FileType("application/octet-stream")
+                        attachment.disposition = Disposition("attachment")
+                        mail.add_attachment(attachment)
+                        logger.info("Attached portfolio file via SendGrid: %s", display_name)
+                    except Exception as exc:
+                        logger.warning("Could not attach file %s: %s", file_path, exc)
+
+            response = sg.send(mail)
+            if response.status_code in (200, 202):
+                logger.info("Email sent via SendGrid to %s (tracking=%s)", to_email, tracking_token)
+                return {"success": True}
+            else:
+                logger.error("SendGrid error %s: %s", response.status_code, response.body)
+                return {"success": False, "error": f"SendGrid error {response.status_code}"}
+        except Exception as exc:
+            logger.error("SendGrid failed to send to %s: %s", to_email, exc)
+            return {"success": False, "error": str(exc)}
+
+    # SMTP fallback
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
             server.ehlo()
