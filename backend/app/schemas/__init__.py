@@ -183,6 +183,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
+    display_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False
     tenant_id: Optional[int] = None

@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     
     # SendGrid (alternative to SMTP)
     SENDGRID_API_KEY: Optional[str] = None
+    SENDGRID_FROM_EMAIL: Optional[str] = None
+    SENDGRID_FROM_NAME: Optional[str] = None
 
     # Resend (HTTP-based, works from Docker)
     RESEND_API_KEY: Optional[str] = None

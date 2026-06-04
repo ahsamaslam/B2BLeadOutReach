@@ -46,6 +46,8 @@ services:
       PLATFORM_FROM_NAME: ${PLATFORM_FROM_NAME:-SendMaster}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      SENDGRID_FROM_NAME: ${SENDGRID_FROM_NAME:-}
       TRACKING_BASE_URL: ${TRACKING_BASE_URL:-}
       TRACKING_ENABLED: ${TRACKING_ENABLED:-true}
       ALLOWED_ORIGINS: "*"
@@ -67,7 +69,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_API_URL: /
+        REACT_APP_API_URL: http://localhost:8000
     container_name: b2b-frontend
     depends_on:
       - backend

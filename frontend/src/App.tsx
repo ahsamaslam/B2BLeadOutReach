@@ -312,14 +312,17 @@ const App: React.FC = () => {
       }
       try {
         const u = await api.me();
+        console.log("bootstrapAuth - api.me() response:", u);
+        console.log("bootstrapAuth - is_admin:", u.is_admin);
         setIsAuthenticated(true);
         setIsAdmin(u.is_admin ?? false);
         setMustChangePassword(u.must_change_password ?? false);
         if (u.email) {
+          const displayName = u.display_name || (u.is_admin ? "Admin" : u.email);
           setUser({
-            name: u.email,
+            name: displayName,
             email: u.email,
-            initials: initials(u.email),
+            initials: initials(displayName || u.email),
           });
         }
         // Fetch admin stats for sidebar badge
@@ -422,12 +425,15 @@ const App: React.FC = () => {
           onAuthSuccess={async () => {
             try {
               const u = await api.me();
+              console.log("api.me() response:", u);
+              console.log("is_admin:", u.is_admin);
               setIsAdmin(u.is_admin ?? false);
               setMustChangePassword(u.must_change_password ?? false);
+              const displayName = u.display_name || (u.is_admin ? "Admin" : u.email) || "User";
               setUser({
-                name: u.email || "User",
+                name: displayName,
                 email: u.email || "",
-                initials: u.email ? initials(u.email) : "U",
+                initials: displayName ? initials(displayName) : "U",
               });
               if (u.is_admin) {
                 try {

@@ -136,8 +136,9 @@ def send_email(
     smtp_port = int(smtp_port or settings.SMTP_PORT)
     smtp_user = smtp_user or settings.SMTP_USER
     smtp_password = smtp_password or settings.SMTP_PASSWORD
-    from_email = from_email or settings.SMTP_FROM_EMAIL or smtp_user
-    from_name = from_name or settings.SMTP_FROM_NAME
+    # Use SendGrid FROM settings if available, else SMTP settings
+    from_email = from_email or settings.SENDGRID_FROM_EMAIL or settings.SMTP_FROM_EMAIL or smtp_user
+    from_name = from_name or settings.SENDGRID_FROM_NAME or settings.SMTP_FROM_NAME
 
     if not smtp_user or not smtp_password:
         logger.error("SMTP credentials not configured")

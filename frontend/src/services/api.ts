@@ -30,7 +30,7 @@ export interface CampaignDetail {
   leads: CampaignLeadDetail[];
 }
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const API_URL = "http://localhost:8000";
 const TOKEN_KEY = "auth_token";
 
 export const authStorage = {
