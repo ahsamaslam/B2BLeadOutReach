@@ -1,0 +1,25 @@
+tunnel: b2b-lead-outreach
+credentials-file: /home/user/.cloudflared/credentials.json
+
+ingress:
+  # Frontend
+  - hostname: tuesday-manitoba-pens-stewart.trycloudflare.com
+    service: http://localhost:3000
+    originRequest:
+      httpHostHeader: localhost
+
+  # Backend API
+  - hostname: api.tuesday-manitoba-pens-stewart.trycloudflare.com
+    service: http://localhost:8000
+    originRequest:
+      httpHostHeader: localhost
+
+  # Catch-all (default to frontend)
+  - service: http://localhost:3000
+    originRequest:
+      httpHostHeader: localhost
+
+# TLS configuration
+tlsConfig:
+  key: /home/user/.cloudflared/key.pem
+  cert: /home/user/.cloudflared/cert.pem

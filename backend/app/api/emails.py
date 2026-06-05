@@ -107,15 +107,23 @@ def _load_email_creds(user: User, db: Session) -> dict:
         )
         saved = {r.key: r.value for r in rows if r.value}
 
+    # If SendGrid is configured, use SendGrid from_email/from_name. Otherwise use SMTP.
+    if settings.SENDGRID_API_KEY:
+        from_email = settings.SENDGRID_FROM_EMAIL or ""
+        from_name = settings.SENDGRID_FROM_NAME or ""
+    else:
+        from_email = saved.get("SMTP_FROM_EMAIL") or settings.SMTP_FROM_EMAIL
+        from_name = saved.get("SMTP_FROM_NAME") or settings.SMTP_FROM_NAME
+
     return {
         # SMTP connection — settings page values take priority over .env
         "smtp_host": saved.get("SMTP_HOST") or settings.SMTP_HOST,
         "smtp_port": int(saved.get("SMTP_PORT") or settings.SMTP_PORT),
         "smtp_user": saved.get("SMTP_USER") or settings.SMTP_USER,
         "smtp_password": saved.get("SMTP_PASSWORD") or settings.SMTP_PASSWORD,
-        # Sender identity
-        "from_email": saved.get("SMTP_FROM_EMAIL") or settings.SMTP_FROM_EMAIL,
-        "from_name": saved.get("SMTP_FROM_NAME") or settings.SMTP_FROM_NAME,
+        # Sender identity — use SendGrid settings if configured, else SMTP
+        "from_email": from_email,
+        "from_name": from_name,
         # Non-SMTP extras — stripped before **spreading into send_email()
         "sender_full_name": saved.get("SENDER_FULL_NAME") or settings.SENDER_FULL_NAME or "",
         "tracking_base_url": saved.get("TRACKING_BASE_URL") or settings.TRACKING_BASE_URL or "",
