@@ -136,9 +136,9 @@ def send_email(
     smtp_port = int(smtp_port or settings.SMTP_PORT)
     smtp_user = smtp_user or settings.SMTP_USER
     smtp_password = smtp_password or settings.SMTP_PASSWORD
-    # Use SendGrid FROM settings if available, else SMTP settings
-    from_email = from_email or settings.SENDGRID_FROM_EMAIL or settings.SMTP_FROM_EMAIL or smtp_user
-    from_name = from_name or settings.SENDGRID_FROM_NAME or settings.SMTP_FROM_NAME
+    # Use Brevo FROM settings if available, else Resend, else SendGrid, else SMTP settings
+    from_email = from_email or settings.BREVO_FROM_EMAIL or settings.RESEND_FROM_EMAIL or settings.SENDGRID_FROM_EMAIL or settings.SMTP_FROM_EMAIL or smtp_user
+    from_name = from_name or settings.BREVO_FROM_NAME or settings.RESEND_FROM_NAME or settings.SENDGRID_FROM_NAME or settings.SMTP_FROM_NAME
 
     if not smtp_user or not smtp_password:
         logger.error("SMTP credentials not configured")
@@ -234,8 +234,145 @@ def send_email(
         except Exception as exc:
             logger.warning("Failed to write email dump: %s", exc)
 
-    # Use SendGrid if API key is configured, else fall back to SMTP
-    if settings.SENDGRID_API_KEY:
+    # Use Brevo if API key is configured, else Resend, else SendGrid, else SMTP
+    if settings.BREVO_API_KEY:
+        try:
+            import requests
+
+            # Build email content
+            enhanced_html = _ensure_html(body_html)
+            if tracking_token:
+                effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
+                enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
+
+            plain_text = _html_to_plaintext(enhanced_html)
+
+            # Prepare attachments
+            attachments = []
+            if attach_portfolio:
+                for file_path in _get_portfolio_files(user_id=user_id, tenant_id=tenant_id):
+                    try:
+                        with open(file_path, "rb") as fh:
+                            data = fh.read()
+                        display_name = file_path.name
+                        if tenant_id and display_name.startswith(f"tenant{tenant_id}_"):
+                            display_name = display_name[len(f"tenant{tenant_id}_"):]
+                        elif user_id and display_name.startswith(f"user{user_id}_"):
+                            display_name = display_name[len(f"user{user_id}_"):]
+
+                        # Brevo expects base64 encoded attachments
+                        import base64
+                        encoded_data = base64.b64encode(data).decode('utf-8')
+                        attachments.append({
+                            "name": display_name,
+                            "content": encoded_data,
+                        })
+                        logger.info("Attached portfolio file via Brevo: %s", display_name)
+                    except Exception as exc:
+                        logger.warning("Could not attach file %s: %s", file_path, exc)
+
+            # Prepare recipient
+            recipient = {
+                "email": to_email,
+            }
+            if to_name:
+                recipient["name"] = to_name
+
+            # Send via Brevo
+            headers = {
+                "api-key": settings.BREVO_API_KEY,
+                "Content-Type": "application/json",
+            }
+
+            payload = {
+                "sender": {
+                    "email": from_email,
+                    "name": from_name or from_email,
+                },
+                "to": [recipient],
+                "subject": subject,
+                "htmlContent": enhanced_html,
+                "textContent": plain_text,
+            }
+
+            if attachments:
+                payload["attachment"] = attachments
+
+            response = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+
+            if response.status_code in (200, 201):
+                logger.info("Email sent via Brevo to %s (tracking=%s)", to_email, tracking_token)
+                return {"success": True}
+            else:
+                error_msg = response.text
+                logger.error("Brevo error %s: %s", response.status_code, error_msg)
+                return {"success": False, "error": f"Brevo error {response.status_code}: {error_msg}"}
+        except Exception as exc:
+            logger.error("Brevo failed to send to %s: %s", to_email, exc)
+            return {"success": False, "error": str(exc)}
+
+    # Fallback to Resend if API key is configured
+    elif settings.RESEND_API_KEY:
+        try:
+            from resend import Resend
+
+            client = Resend(api_key=settings.RESEND_API_KEY)
+
+            # Build email content
+            enhanced_html = _ensure_html(body_html)
+            if tracking_token:
+                effective_base_url = (tracking_base_url or settings.TRACKING_BASE_URL or "").strip()
+                enhanced_html = _inject_tracking_pixel(enhanced_html, tracking_token, effective_base_url)
+
+            plain_text = _html_to_plaintext(enhanced_html)
+
+            # Prepare attachments
+            attachments = []
+            if attach_portfolio:
+                for file_path in _get_portfolio_files(user_id=user_id, tenant_id=tenant_id):
+                    try:
+                        with open(file_path, "rb") as fh:
+                            data = fh.read()
+                        display_name = file_path.name
+                        if tenant_id and display_name.startswith(f"tenant{tenant_id}_"):
+                            display_name = display_name[len(f"tenant{tenant_id}_"):]
+                        elif user_id and display_name.startswith(f"user{user_id}_"):
+                            display_name = display_name[len(f"user{user_id}_"):]
+                        attachments.append({
+                            "filename": display_name,
+                            "content": data,
+                        })
+                        logger.info("Attached portfolio file via Resend: %s", display_name)
+                    except Exception as exc:
+                        logger.warning("Could not attach file %s: %s", file_path, exc)
+
+            # Send via Resend
+            response = client.emails.send({
+                "from": f"{from_name} <{from_email}>" if from_name else from_email,
+                "to": to_email,
+                "subject": subject,
+                "html": enhanced_html,
+                "text": plain_text,
+                "attachments": attachments if attachments else None,
+            })
+
+            if response.get("id"):
+                logger.info("Email sent via Resend to %s (tracking=%s)", to_email, tracking_token)
+                return {"success": True}
+            else:
+                logger.error("Resend error: %s", response.get("error", "Unknown error"))
+                return {"success": False, "error": f"Resend error: {response.get('error', 'Unknown error')}"}
+        except Exception as exc:
+            logger.error("Resend failed to send to %s: %s", to_email, exc)
+            return {"success": False, "error": str(exc)}
+
+    # Fallback to SendGrid if API key is configured
+    elif settings.SENDGRID_API_KEY:
         try:
             import sendgrid as sg_module
             from sendgrid.helpers.mail import (

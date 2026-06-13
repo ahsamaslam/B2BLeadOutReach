@@ -34,8 +34,15 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: Optional[str] = None
     SENDGRID_FROM_NAME: Optional[str] = None
 
+    # Brevo - Email service API
+    BREVO_API_KEY: Optional[str] = None
+    BREVO_FROM_EMAIL: Optional[str] = None
+    BREVO_FROM_NAME: Optional[str] = None
+
     # Resend (HTTP-based, works from Docker)
     RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM_EMAIL: Optional[str] = None
+    RESEND_FROM_NAME: Optional[str] = None
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
