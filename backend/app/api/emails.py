@@ -107,8 +107,11 @@ def _load_email_creds(user: User, db: Session) -> dict:
         )
         saved = {r.key: r.value for r in rows if r.value}
 
-    # If SendGrid is configured, use SendGrid from_email/from_name. Otherwise use SMTP.
-    if settings.SENDGRID_API_KEY:
+    # Use Brevo if configured, else SendGrid, else SMTP
+    if settings.BREVO_API_KEY:
+        from_email = settings.BREVO_FROM_EMAIL or ""
+        from_name = settings.BREVO_FROM_NAME or ""
+    elif settings.SENDGRID_API_KEY:
         from_email = settings.SENDGRID_FROM_EMAIL or ""
         from_name = settings.SENDGRID_FROM_NAME or ""
     else:
