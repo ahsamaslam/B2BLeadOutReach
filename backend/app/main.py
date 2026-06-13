@@ -13,6 +13,7 @@ from app.api import admin as admin_api
 from app.api import followups as followups_api
 from app.api import scraping as scraping_api
 from app.api import campaigns as campaigns_api
+from app.api import test_imap
 
 # Create all tables (new tables only — existing tables are not modified)
 Base.metadata.create_all(bind=engine)
@@ -202,6 +203,7 @@ app.include_router(admin_api.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(followups_api.router, prefix="/api/followups", tags=["Followups"])
 app.include_router(scraping_api.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(campaigns_api.router, prefix="/api/campaigns", tags=["Campaigns"])
+app.include_router(test_imap.router, prefix="/api", tags=["Testing"])
 
 # ── Follow-up scheduler (APScheduler, runs inside FastAPI process) ────────────
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -212,6 +214,7 @@ _scheduler = BackgroundScheduler(timezone="UTC")
 def start_followup_scheduler():
     from app.api.followups import process_due_followups
     from app.database import SessionLocal
+    from app.services.imap_service import check_for_replies
 
     def _run_followup_job():
         db = SessionLocal()
@@ -226,7 +229,27 @@ def start_followup_scheduler():
         finally:
             db.close()
 
+    def _run_reply_checker_job():
+        db = SessionLocal()
+        try:
+            count = check_for_replies(db)
+            if count:
+                import logging
+                logging.getLogger(__name__).info("Reply checker: detected %d new replies", count)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Reply checker error: %s", exc)
+        finally:
+            db.close()
+
     _scheduler.add_job(_run_followup_job, "interval", minutes=15, id="followup_job", replace_existing=True)
+
+    # Add reply checker if IMAP is enabled
+    from app.config import settings
+    if settings.IMAP_ENABLED:
+        interval = settings.IMAP_CHECK_INTERVAL_MINUTES or 5
+        _scheduler.add_job(_run_reply_checker_job, "interval", minutes=interval, id="reply_checker_job", replace_existing=True)
+
     _scheduler.start()
 
 @app.on_event("shutdown")

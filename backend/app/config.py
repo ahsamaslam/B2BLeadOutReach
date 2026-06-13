@@ -95,7 +95,15 @@ class Settings(BaseSettings):
 
     # Deliverability mode: use cleaner plain-text first-touch emails
     DELIVERABILITY_MODE_ENABLED: bool = True
-    
+
+    # IMAP for reply detection
+    IMAP_ENABLED: bool = False
+    IMAP_HOST: Optional[str] = None
+    IMAP_PORT: int = 993
+    IMAP_USER: Optional[str] = None
+    IMAP_PASSWORD: Optional[str] = None
+    IMAP_CHECK_INTERVAL_MINUTES: int = 5
+
     class Config:
         env_file = ".env"
         case_sensitive = True

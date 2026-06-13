@@ -121,8 +121,11 @@ class EmailLogResponse(BaseModel):
     status: str
     sent_at: Optional[datetime]
     error_message: Optional[str]
+    opened_at: Optional[datetime]
+    open_count: int = 0
+    replied_at: Optional[datetime]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
